@@ -1,0 +1,57 @@
+name: Build Skin PSD Adapter EXE
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "**"
+      - ".github/workflows/build-skin-psd-adapter.yml"
+
+jobs:
+  build-windows-exe:
+    name: Build Windows single-file EXE
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build EXE
+        run: |
+          python -m PyInstaller .\skin_psd_adapter.spec --noconfirm --clean
+          if (-not (Test-Path ".\dist\SkinPsdAdapter.exe")) {
+            throw "Build failed: dist\SkinPsdAdapter.exe not found"
+          }
+
+      - name: Smoke test EXE file
+        run: |
+          $exe = ".\dist\SkinPsdAdapter.exe"
+          $size = (Get-Item $exe).Length
+          if ($size -lt 10MB) {
+            throw "Built EXE looks too small: $size bytes"
+          }
+          Write-Host "Built EXE size: $size bytes"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SkinPsdAdapter-windows-exe
+          path: dist/SkinPsdAdapter.exe
+          if-no-files-found: error
+          retention-days: 14

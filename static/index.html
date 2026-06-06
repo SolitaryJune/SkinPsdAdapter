@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>皮肤 PSD 自动适配工具</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f7f9;
+      --panel: #ffffff;
+      --text: #1d252d;
+      --muted: #65717d;
+      --line: #d7e0e7;
+      --primary: #1876d1;
+      --primary-dark: #0f5fae;
+      --ok: #138a4d;
+      --warn: #b26a00;
+      --bad: #b3261e;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      font-size: 15px;
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 24px auto 40px;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 720;
+      letter-spacing: 0;
+    }
+
+    .subtle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    section,
+    .sidebar {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .sidebar {
+      padding: 16px;
+      position: sticky;
+      top: 16px;
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 7px;
+      font-weight: 650;
+    }
+
+    input[type="file"],
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 10px;
+      min-height: 42px;
+    }
+
+    .checks {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 9px 8px;
+      color: var(--text);
+      user-select: none;
+    }
+
+    .check input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 6px;
+      background: var(--primary);
+      color: #fff;
+      min-height: 42px;
+      padding: 0 14px;
+      font-size: 14px;
+      font-weight: 680;
+      cursor: pointer;
+    }
+
+    button:hover { background: var(--primary-dark); }
+    button:disabled { background: #8ba2b5; cursor: wait; }
+    button.secondary { background: #31475c; }
+    button.secondary:hover { background: #243748; }
+
+    .content {
+      display: grid;
+      gap: 16px;
+    }
+
+    .panel-block {
+      padding: 16px;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    pre {
+      margin: 0;
+      max-height: 280px;
+      overflow: auto;
+      padding: 12px;
+      border-radius: 6px;
+      background: #101820;
+      color: #d8e6ef;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .preview-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .preview-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fbfdff;
+    }
+
+    .preview-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+    }
+
+    .preview-card img {
+      display: block;
+      width: 100%;
+      height: auto;
+      background:
+        linear-gradient(45deg, #e8eef3 25%, transparent 25%),
+        linear-gradient(-45deg, #e8eef3 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e8eef3 75%),
+        linear-gradient(-45deg, transparent 75%, #e8eef3 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    }
+
+    .status {
+      min-height: 42px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: #fbfdff;
+      line-height: 1.5;
+    }
+
+    .status.ok { border-color: #9dd8b7; color: var(--ok); background: #f1fbf5; }
+    .status.warn { border-color: #f2cb8c; color: var(--warn); background: #fff8ee; }
+    .status.bad { border-color: #efaaa5; color: var(--bad); background: #fff5f4; }
+
+    @media (max-width: 820px) {
+      main { width: min(100vw - 20px, 680px); margin-top: 12px; }
+      header { display: block; }
+      .workspace { grid-template-columns: 1fr; }
+      .sidebar { position: static; }
+      .checks { grid-template-columns: 1fr; }
+      .actions { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>皮肤 PSD 自动适配工具</h1>
+        <p class="subtle">上传 PSD/PSD 压缩包和目标 .bds/.bdi，按键切片后生成预览、PSD 或新底包。</p>
+      </div>
+      <div id="health" class="status">正在连接本地服务...</div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="field">
+          <label for="designFile">设计稿 PSD / PSD zip / 图片</label>
+          <input id="designFile" type="file" accept=".psd,.zip,.png,.jpg,.jpeg,.webp" />
+        </div>
+
+        <div class="field">
+          <label for="basePackage">目标底包 .bds / .bdi</label>
+          <input id="basePackage" type="file" accept=".bds,.bdi,.zip" />
+        </div>
+
+        <div class="field">
+          <label>面板</label>
+          <div class="checks">
+            <label class="check"><input type="checkbox" name="panel" value="py_26" checked />26 键</label>
+            <label class="check"><input type="checkbox" name="panel" value="py_9" checked />9 键</label>
+            <label class="check"><input type="checkbox" name="panel" value="num_9" checked />123</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="resizeMode">按键缩放</label>
+          <select id="resizeMode">
+            <option value="stretch">拉伸到目标框</option>
+            <option value="cover">等比铺满并裁切</option>
+            <option value="contain">等比完整放入</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="layerMode">PSD 导出图层</label>
+          <select id="layerMode">
+            <option value="panel_layers">每个面板一个图层</option>
+            <option value="key_layers">每个按键一个图层</option>
+          </select>
+        </div>
+
+        <label class="check">
+          <input id="includePressed" type="checkbox" checked />
+          同时替换按压态 HL_IMG
+        </label>
+
+        <label class="check" style="margin-top:8px;">
+          <input id="darkenPressed" type="checkbox" checked />
+          按压态轻微压暗
+        </label>
+
+        <div class="actions">
+          <button id="analyzeBtn" class="secondary">分析</button>
+          <button id="previewBtn">预览</button>
+          <button id="psdBtn">导出 PSD</button>
+          <button id="packageBtn">导出底包</button>
+        </div>
+      </aside>
+
+      <div class="content">
+        <section class="panel-block">
+          <div class="panel-title">
+            <h2>状态</h2>
+          </div>
+          <div id="status" class="status">请选择设计稿和目标底包。</div>
+        </section>
+
+        <section class="panel-block">
+          <div class="panel-title">
+            <h2>分析结果</h2>
+          </div>
+          <pre id="report">还没有分析。</pre>
+        </section>
+
+        <section class="panel-block">
+          <div class="panel-title">
+            <h2>预览</h2>
+          </div>
+          <div id="previews" class="preview-grid"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const buttons = ["analyzeBtn", "previewBtn", "psdBtn", "packageBtn"].map($);
+
+    function setBusy(isBusy) {
+      buttons.forEach((button) => { button.disabled = isBusy; });
+    }
+
+    function setStatus(text, type = "") {
+      const node = $("status");
+      node.className = `status ${type}`;
+      node.textContent = text;
+    }
+
+    function selectedPanels() {
+      return Array.from(document.querySelectorAll('input[name="panel"]:checked'))
+        .map((item) => item.value)
+        .join(",");
+    }
+
+    function makeFormData(extra = {}) {
+      const design = $("designFile").files[0];
+      const basePackage = $("basePackage").files[0];
+      if (!design || !basePackage) {
+        throw new Error("请先选择设计稿和目标底包。");
+      }
+
+      // FastAPI 用同一组字段处理分析、预览、导出，所以前端统一构造 FormData。
+      const form = new FormData();
+      form.append("design_file", design);
+      form.append("base_package", basePackage);
+      form.append("panels", selectedPanels());
+      form.append("resize_mode", $("resizeMode").value);
+      form.append("layer_mode", $("layerMode").value);
+      form.append("include_pressed", $("includePressed").checked ? "true" : "false");
+      form.append("darken_pressed", $("darkenPressed").checked ? "true" : "false");
+      Object.entries(extra).forEach(([key, value]) => form.append(key, value));
+      return form;
+    }
+
+    async function parseError(response) {
+      try {
+        const data = await response.json();
+        return data.detail || JSON.stringify(data);
+      } catch (_) {
+        return await response.text();
+      }
+    }
+
+    async function postJson(url) {
+      const response = await fetch(url, { method: "POST", body: makeFormData() });
+      if (!response.ok) throw new Error(await parseError(response));
+      return response.json();
+    }
+
+    async function downloadFrom(url, filename) {
+      const response = await fetch(url, { method: "POST", body: makeFormData() });
+      if (!response.ok) throw new Error(await parseError(response));
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      URL.revokeObjectURL(link.href);
+      link.remove();
+    }
+
+    $("analyzeBtn").addEventListener("click", async () => {
+      try {
+        setBusy(true);
+        setStatus("正在分析 PSD 和底包结构...");
+        const data = await postJson("/api/analyze");
+        $("report").textContent = JSON.stringify(data, null, 2);
+        setStatus("分析完成。", "ok");
+      } catch (error) {
+        setStatus(error.message, "bad");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    $("previewBtn").addEventListener("click", async () => {
+      try {
+        setBusy(true);
+        setStatus("正在生成预览...");
+        const data = await postJson("/api/preview");
+        $("report").textContent = JSON.stringify({
+          replaced_files: data.replaced_files,
+          diagnostics: data.diagnostics
+        }, null, 2);
+        const container = $("previews");
+        container.innerHTML = "";
+        data.previews.forEach((preview) => {
+          const card = document.createElement("div");
+          card.className = "preview-card";
+          card.innerHTML = `
+            <div class="preview-meta">
+              <strong>${preview.title}</strong>
+              <span>${preview.width} × ${preview.height} · ${preview.source}</span>
+            </div>
+            <img alt="${preview.title}" src="${preview.data_url}" />
+          `;
+          container.appendChild(card);
+        });
+        setStatus(`预览完成，共 ${data.previews.length} 个面板。`, "ok");
+      } catch (error) {
+        setStatus(error.message, "bad");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    $("psdBtn").addEventListener("click", async () => {
+      try {
+        setBusy(true);
+        setStatus("正在导出 PSD...");
+        await downloadFrom("/api/export-psd", "skin_auto_adapt.psd");
+        setStatus("PSD 已生成。", "ok");
+      } catch (error) {
+        setStatus(error.message, "bad");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    $("packageBtn").addEventListener("click", async () => {
+      try {
+        setBusy(true);
+        setStatus("正在导出新底包...");
+        const base = $("basePackage").files[0];
+        const ext = base && /\.[^.]+$/.test(base.name) ? base.name.match(/\.[^.]+$/)[0] : ".bds";
+        await downloadFrom("/api/export-package", `skin_auto_adapt${ext}`);
+        setStatus("新底包已生成。", "ok");
+      } catch (error) {
+        setStatus(error.message, "bad");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    async function checkHealth() {
+      try {
+        const response = await fetch("/health");
+        const data = await response.json();
+        $("health").className = "status ok";
+        $("health").textContent = data.ok ? "本地服务已连接" : "本地服务异常";
+      } catch (_) {
+        $("health").className = "status bad";
+        $("health").textContent = "无法连接本地服务";
+      }
+    }
+
+    checkHealth();
+  </script>
+</body>
+</html>
+
