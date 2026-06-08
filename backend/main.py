@@ -231,7 +231,7 @@ async def export_psd(
     resize_mode: ResizeMode = Form("stretch"),
     include_pressed: bool = Form(True),
     darken_pressed: bool = Form(True),
-    layer_mode: PsdLayerMode = Form("panel_layers"),
+    layer_mode: PsdLayerMode = Form("source_layers"),
 ) -> Response:
     design_data = await _read_upload(design_file)
     package_data = await _read_upload(base_package)

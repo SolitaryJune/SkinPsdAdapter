@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 
 from PIL import Image, ImageEnhance
 
 from .ini_parser import Rect
-from .psd_reader import SourceImage
+from .psd_reader import SourceImage, SourceLayer
 from .skin_parser import KeySlot, PanelLayout, SkinPackage, StyleImageRef, parse_til_slices
 
 
@@ -25,6 +25,24 @@ class KeyLayer:
 
 
 @dataclass
+class PreservedSourceLayer:
+    """按源 PSD 图层拆出来的适配后图层。
+
+    这是为“导出后图层也要像原来那样”准备的：同一个源 PSD 图层会被切过所有目标键位，
+    再合成回一张目标面板大小的透明层，图层名仍沿用源 PSD。
+    """
+
+    panel_title: str
+    source_layer_name: str
+    image: Image.Image
+    visible: bool = True
+    opacity: int = 255
+    blend_mode: bytes | str = b"norm"
+    clipping: bool = False
+    group_path: Tuple[str, ...] = ()
+
+
+@dataclass
 class AdaptedPanel:
     """一个面板的适配结果。"""
 
@@ -32,6 +50,7 @@ class AdaptedPanel:
     source_name: str
     preview: Image.Image
     key_layers: List[KeyLayer] = field(default_factory=list)
+    preserved_layers: List[PreservedSourceLayer] = field(default_factory=list)
 
 
 @dataclass
@@ -46,6 +65,8 @@ class AdaptResult:
         for panel in self.panels:
             panel.preview.close()
             for layer in panel.key_layers:
+                layer.image.close()
+            for layer in panel.preserved_layers:
                 layer.image.close()
 
 
@@ -113,6 +134,20 @@ def _crop_source_key(source: SourceImage, panel: PanelLayout, key: KeySlot) -> I
 
 def _make_key_art(source: SourceImage, panel: PanelLayout, key: KeySlot, dest_rect: Rect, mode: ResizeMode) -> Image.Image:
     cropped = _crop_source_key(source, panel, key)
+    try:
+        return _resize_to_box(cropped, dest_rect.w, dest_rect.h, mode)
+    finally:
+        cropped.close()
+
+
+def _crop_source_layer_key(source_layer: SourceLayer, source_rect: Rect, dest_rect: Rect, mode: ResizeMode) -> Image.Image:
+    """对单个源 PSD 图层执行同样的键位裁切/缩放。
+
+    注意这里和整图裁切不同：源图层可能只覆盖键位的一小角，所以 `crop_region`
+    会保持透明区域，再缩放到目标键位。这能最大程度保留每个小装饰图层的独立性。
+    """
+
+    cropped = source_layer.crop_region(source_rect)
     try:
         return _resize_to_box(cropped, dest_rect.w, dest_rect.h, mode)
     finally:
@@ -221,8 +256,25 @@ class SkinAdapter:
             source = _select_source_image(self.sources, panel.panel_key)
             preview = Image.new("RGBA", (panel.width, panel.height), (0, 0, 0, 0))
             key_layers: List[KeyLayer] = []
+            preserved_layers: List[PreservedSourceLayer] = [
+                PreservedSourceLayer(
+                    panel_title=panel.title,
+                    source_layer_name=source_layer.name,
+                    image=Image.new("RGBA", (panel.width, panel.height), (0, 0, 0, 0)),
+                    visible=source_layer.visible,
+                    opacity=source_layer.opacity,
+                    blend_mode=source_layer.blend_mode,
+                    clipping=source_layer.clipping,
+                    group_path=source_layer.group_path,
+                )
+                for source_layer in source.layers
+            ]
+            src_w, src_h = source.image.size
+            sx = src_w / max(1, panel.width)
+            sy = src_h / max(1, panel.height)
 
             for key in panel.keys:
+                source_rect = key.rect.scaled(sx, sy).clamp(src_w, src_h)
                 key_art = _make_key_art(source, panel, key, key.rect, self.resize_mode)
                 preview.alpha_composite(key_art, (key.rect.x, key.rect.y))
                 key_layers.append(
@@ -233,6 +285,14 @@ class SkinAdapter:
                         image=key_art.copy(),
                     )
                 )
+
+                for source_layer, preserved_layer in zip(source.layers, preserved_layers):
+                    layer_piece = _crop_source_layer_key(source_layer, source_rect, key.rect, self.resize_mode)
+                    try:
+                        if layer_piece.getbbox():
+                            preserved_layer.image.alpha_composite(layer_piece, (key.rect.x, key.rect.y))
+                    finally:
+                        layer_piece.close()
 
                 # 写回底包时不直接用 VIEW_RECT，而是贴到 BACK_STYLE 指向的 PNG/TIL 切片里。
                 for ref in key.style_refs:
@@ -245,6 +305,7 @@ class SkinAdapter:
                     source_name=source.name,
                     preview=preview,
                     key_layers=key_layers,
+                    preserved_layers=preserved_layers,
                 )
             )
 
@@ -257,4 +318,3 @@ class SkinAdapter:
             replacements=replacements,
             diagnostics=self.diagnostics,
         )
-
