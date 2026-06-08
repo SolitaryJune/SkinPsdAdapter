@@ -7,6 +7,9 @@ on:
       - "**"
       - ".github/workflows/build-skin-psd-adapter.yml"
 
+permissions:
+  contents: write
+
 jobs:
   build-windows-exe:
     name: Build Windows single-file EXE
@@ -55,3 +58,13 @@ jobs:
           path: dist/SkinPsdAdapter.exe
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish latest release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: SkinPsdAdapter latest
+          body: "自动构建的 Windows 单文件版本。"
+          files: dist/SkinPsdAdapter.exe
+          make_latest: true
