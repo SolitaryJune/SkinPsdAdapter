@@ -82,12 +82,24 @@ def _guess_panel_key(name: str) -> str:
     """
 
     stem = os.path.splitext(os.path.basename(name).lower())[0]
+    if "num_9h" in stem or "num-9h" in stem:
+        return "num_9h"
     if "123" in stem or "num" in stem or "number" in stem:
         return "num_9"
+    if "en_26" in stem or "en-26" in stem:
+        return "en_26"
     if re.search(r"(^|[^0-9])26([^0-9]|$)", stem) or "py_26" in stem:
         return "py_26"
+    if "en_9" in stem or "en-9" in stem:
+        return "en_9"
     if re.search(r"(^|[^0-9])9([^0-9]|$)", stem) or "py_9" in stem:
         return "py_9"
+    if "hw_grid" in stem or "hand" in stem or "shouxie" in stem:
+        return "hw_grid"
+    if "symbol" in stem or "sym" in stem:
+        return "symbol"
+    if re.search(r"(^|[^a-z])bh([^a-z]|$)", stem) or "bihua" in stem:
+        return "bh"
     return "py_26"
 
 

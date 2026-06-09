@@ -263,9 +263,23 @@
           <label>面板</label>
           <div class="checks">
             <label class="check"><input type="checkbox" name="panel" value="py_26" checked />26 键</label>
+            <label class="check"><input type="checkbox" name="panel" value="en_26" checked />英文 26</label>
             <label class="check"><input type="checkbox" name="panel" value="py_9" checked />9 键</label>
+            <label class="check"><input type="checkbox" name="panel" value="en_9" checked />英文 9</label>
+            <label class="check"><input type="checkbox" name="panel" value="bh" checked />笔画</label>
             <label class="check"><input type="checkbox" name="panel" value="num_9" checked />123</label>
+            <label class="check"><input type="checkbox" name="panel" value="num_9h" checked />数字扩展</label>
+            <label class="check"><input type="checkbox" name="panel" value="symbol" checked />符号</label>
+            <label class="check"><input type="checkbox" name="panel" value="hw_grid" checked />手写</label>
           </div>
+        </div>
+
+        <div class="field">
+          <label for="sizeBasis">面板尺寸</label>
+          <select id="sizeBasis">
+            <option value="default">以默认为准：按小程序规则收敛外框</option>
+            <option value="image">以图片为准：保留 PNG 实际尺寸</option>
+          </select>
         </div>
 
         <div class="field">
@@ -361,6 +375,7 @@
       form.append("design_file", design);
       form.append("base_package", basePackage);
       form.append("panels", selectedPanels());
+      form.append("size_basis", $("sizeBasis").value);
       form.append("resize_mode", $("resizeMode").value);
       form.append("layer_mode", $("layerMode").value);
       form.append("include_pressed", $("includePressed").checked ? "true" : "false");

@@ -59,7 +59,7 @@ dist\SkinPsdAdapter.exe
 触发方式：
 
 - 手动运行：GitHub 仓库页面 -> Actions -> Build Skin PSD Adapter EXE -> Run workflow。
-- 或推送 `runtime-services/skin-psd-adapter/**` 相关改动后自动运行。
+- 或推送本仓库改动后自动运行。
 
 打包完成后，在 workflow run 的 Artifacts 里下载：
 
@@ -76,5 +76,6 @@ SkinPsdAdapter.exe
 ## 当前边界
 
 - PSD 导出是“重建版 PSD”：默认尽量保留原 PSD 图层名和顺序，但不保证保留智能对象、文字矢量、图层样式等 Photoshop 专有编辑能力。
-- 第一版支持 `py_26`、`py_9`、`num_9`。后续可按同一解析结构补 `bh`、`symbol`、`hw_grid`。
+- 面板解析清单已对齐小程序前端：`py_26`、`en_26`、`py_9`、`en_9`、`bh`、`num_9`、`num_9h`、`symbol`、`hw_grid`。
+- 面板尺寸默认按小程序“以默认为准”规则解析；遇到 1080x641 这类 PNG 外框时，会优先收敛到 INI 真实键盘区。界面也提供“以图片为准”选项。
 - 如果设计稿和目标底包键位布局差异极大，自动裁切可能需要人工微调。后续可以增加源布局 INI 上传或前端手动校正。

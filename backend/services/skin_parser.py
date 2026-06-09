@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Literal, Optional, Sequence
 
 from .archive import SkinArchive
 from .ini_parser import (
@@ -17,6 +17,7 @@ from .ini_parser import (
 
 
 STYLE_IMAGE_PROPS = ("NM_IMG", "HL_IMG")
+PanelSizeBasis = Literal["default", "image"]
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,7 @@ class PanelLayout:
     width: int
     height: int
     keys: List[KeySlot]
+    size_note: str = ""
 
     @property
     def title(self) -> str:
@@ -78,9 +80,17 @@ class SkinPackage:
 
 DEFAULT_PANEL_FILES: Dict[str, str] = {
     "py_26": "py_26.ini",
+    "en_26": "en_26.ini",
     "py_9": "py_9.ini",
+    "en_9": "en_9.ini",
+    "bh": "bh.ini",
     "num_9": "num_9.ini",
+    "num_9h": "num_9h.ini",
+    "symbol": "symbol.ini",
+    "hw_grid": "hw_grid.ini",
 }
+
+DEFAULT_PANEL_SELECTION = list(DEFAULT_PANEL_FILES.keys())
 
 
 def detect_themes(paths: Sequence[str]) -> List[str]:
@@ -131,18 +141,119 @@ def find_skin_paths(paths: Sequence[str], theme: str) -> Dict[str, str]:
     }
 
 
-def _get_panel_size(ini: Dict[str, Dict[str, str]], key_rects: Iterable[Rect]) -> tuple[int, int]:
-    panel = find_section_case_insensitive(ini, "PANEL") or {}
-    size_rect = parse_rect(f"0,0,{panel.get('SIZE', '')}") if panel.get("SIZE") else None
-    if size_rect:
-        return size_rect.w, size_rect.h
+def _parse_size(value: object) -> Optional[tuple[int, int]]:
+    """解析 `1080,595` 这种 SIZE 值。
 
-    max_right = 0
-    max_bottom = 0
-    for rect in key_rects:
-        max_right = max(max_right, rect.right)
-        max_bottom = max(max_bottom, rect.bottom)
-    return max(max_right, 1080), max(max_bottom, 595)
+    `parse_rect` 需要四段数字，所以 SIZE 要单独处理。这里和小程序前端一样只认正数宽高，
+    解析失败时让上层继续回落到 gen.ini、KEY 最大边界或默认尺寸。
+    """
+
+    match = re.search(r"(\d+)\s*,\s*(\d+)", str(value or ""))
+    if not match:
+        return None
+    width = int(match.group(1))
+    height = int(match.group(2))
+    return (width, height) if width > 0 and height > 0 else None
+
+
+def _get_ini_size(ini: Dict[str, Dict[str, str]], section: str, key: str = "SIZE") -> Optional[tuple[int, int]]:
+    values = find_section_case_insensitive(ini, section) or {}
+    return _parse_size(values.get(key))
+
+
+def _read_png_size(archive: SkinArchive, path: str) -> Optional[tuple[int, int]]:
+    """读取 PNG IHDR 宽高，用于“以图片为准”的画布口径。
+
+    小程序前端读 PNG 尺寸时也只看头部字段，不需要完整解码图片；这样兼容性和速度都更稳。
+    """
+
+    data = archive.read_binary(path)
+    if not data or len(data) < 24:
+        return None
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+
+
+def _get_primary_atlas_size(archive: SkinArchive, refs: Sequence[StyleImageRef]) -> Optional[tuple[int, int]]:
+    """从 BACK_STYLE 引用里取面积最大的 PNG 尺寸。
+
+    贴纸/前景页面会用 BACK_STYLE 主图集判断 595/641 这类冲突。这里按 PNG 面积排序，
+    可以覆盖常态图和按压态图尺寸不一致的老包。
+    """
+
+    seen: set[str] = set()
+    sizes: List[tuple[int, int]] = []
+    for ref in refs:
+        key = ref.png_path.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        size = _read_png_size(archive, ref.png_path)
+        if size:
+            sizes.append(size)
+    if not sizes:
+        return None
+    return max(sizes, key=lambda item: item[0] * item[1])
+
+
+def _get_panel_size(
+    ini: Dict[str, Dict[str, str]],
+    key_rects: Iterable[tuple[Rect, str]],
+    gen_ini: Dict[str, Dict[str, str]],
+    image_size: Optional[tuple[int, int]],
+    size_basis: PanelSizeBasis,
+) -> tuple[int, int, str]:
+    """按小程序前端规则解析面板键盘区尺寸。
+
+    默认口径：
+    1. 当前面板 [PANEL].SIZE；
+    2. gen.ini [PANEL].SIZE；
+    3. PNG 图集实际尺寸；
+    4. KEY 的 VIEW_RECT 最大范围；
+    5. 兜底 1080x595。
+
+    如果传入 PNG 实际尺寸且发现 INI 里有 `0,0,1080,595` 这类整面板 KEY，默认会把
+    `1080x641` 收敛到 `1080x595`。用户选择“以图片为准”时才保留 PNG 外框尺寸。
+    """
+
+    rect_infos = list(key_rects)
+    rects = [rect for rect, _center in rect_infos]
+    panel_size = _get_ini_size(ini, "PANEL")
+    gen_size = _get_ini_size(gen_ini, "PANEL")
+    initial_size = panel_size or gen_size or image_size
+    source = "PANEL.SIZE" if panel_size else ("gen.ini PANEL.SIZE" if gen_size else ("PNG IHDR" if image_size else "VIEW_RECT"))
+
+    if initial_size:
+        width, height = initial_size
+    else:
+        max_right = 0
+        max_bottom = 0
+        for rect in rects:
+            max_right = max(max_right, rect.right)
+            max_bottom = max(max_bottom, rect.bottom)
+        width = max(max_right, 1080)
+        height = max(max_bottom, 595)
+
+    if size_basis == "image" and image_size:
+        width, height = image_size
+        return width, height, f"以图片为准: PNG IHDR {width}x{height}"
+
+    full_panel_rect = sorted(
+        (
+            rect
+            for rect, center in rect_infos
+            if not center and abs(rect.x) <= 1 and abs(rect.y) <= 1 and rect.w >= width * 0.9 and rect.h > 0
+        ),
+        key=lambda item: item.area,
+        reverse=True,
+    )
+    if full_panel_rect and initial_size and full_panel_rect[0].h < height:
+        old_height = height
+        height = full_panel_rect[0].h
+        source = f"{source}, 按整面板 KEY 收敛 {old_height}->{height}"
+
+    return width, height, source
 
 
 def _is_full_panel_key(rect: Rect, width: int, height: int, center: str) -> bool:
@@ -226,6 +337,22 @@ def _style_refs_for_key(
     return refs
 
 
+def _style_refs_for_section(
+    archive: SkinArchive,
+    css: Dict[str, Dict[str, str]],
+    res_path: str,
+    values: Dict[str, str],
+    include_pressed: bool,
+) -> List[StyleImageRef]:
+    return _style_refs_for_key(
+        archive=archive,
+        css=css,
+        res_path=res_path,
+        back_style=str(values.get("BACK_STYLE", "")),
+        include_pressed=include_pressed,
+    )
+
+
 def parse_til_slices(til_text: str) -> Dict[int, Rect]:
     """把 .til 文件里的 IMGn/SOURCE_RECT 解析成切片坐标。"""
 
@@ -248,7 +375,9 @@ def parse_panel_layout(
     ini_name: str,
     skin_paths: Dict[str, str],
     css: Dict[str, Dict[str, str]],
+    gen_ini: Dict[str, Dict[str, str]],
     include_pressed: bool,
+    size_basis: PanelSizeBasis,
 ) -> Optional[PanelLayout]:
     ini_path = f"{skin_paths['port']}{ini_name}"
     ini_text = archive.read_text(ini_path)
@@ -256,26 +385,35 @@ def parse_panel_layout(
         return None
     ini = parse_ini(ini_text)
 
-    raw_keys: List[tuple[str, Rect, Dict[str, str]]] = []
+    raw_keys: List[tuple[str, Rect, Dict[str, str], List[StyleImageRef]]] = []
+    all_refs: List[StyleImageRef] = []
     for section in sorted_numbered_sections(ini, "KEY"):
         values = ini[section]
         rect = parse_rect(values.get("VIEW_RECT"))
-        if rect:
-            raw_keys.append((section, rect, values))
-
-    width, height = _get_panel_size(ini, (item[1] for item in raw_keys))
-    keys: List[KeySlot] = []
-    for section, rect, values in raw_keys:
-        center = str(values.get("CENTER", "")).strip().strip("'\"")
-        if _is_full_panel_key(rect, width, height, center):
-            continue
-        refs = _style_refs_for_key(
+        refs = _style_refs_for_section(
             archive=archive,
             css=css,
             res_path=skin_paths["res"],
-            back_style=str(values.get("BACK_STYLE", "")),
+            values=values,
             include_pressed=include_pressed,
         )
+        all_refs.extend(refs)
+        if rect:
+            raw_keys.append((section, rect, values, refs))
+
+    image_size = _get_primary_atlas_size(archive, all_refs)
+    width, height, size_note = _get_panel_size(
+        ini=ini,
+        key_rects=((item[1], str(item[2].get("CENTER", "")).strip().strip("'\"")) for item in raw_keys),
+        gen_ini=gen_ini,
+        image_size=image_size,
+        size_basis=size_basis,
+    )
+    keys: List[KeySlot] = []
+    for section, rect, values, refs in raw_keys:
+        center = str(values.get("CENTER", "")).strip().strip("'\"")
+        if _is_full_panel_key(rect, width, height, center):
+            continue
         # 没有图集引用的装饰配置先跳过；后续如果要处理纯背景或候选栏，可在这里扩展。
         if not refs:
             continue
@@ -300,6 +438,7 @@ def parse_panel_layout(
         width=width,
         height=height,
         keys=keys,
+        size_note=size_note,
     )
 
 
@@ -308,22 +447,27 @@ def parse_skin_package(
     filename: str,
     panel_keys: Optional[Sequence[str]] = None,
     include_pressed: bool = True,
+    size_basis: PanelSizeBasis = "default",
 ) -> SkinPackage:
     """解析目标底包，返回适配所需的面板和图集引用。"""
 
     archive = SkinArchive(data, filename)
     diagnostics: List[str] = []
     panels: List[PanelLayout] = []
-    selected = list(panel_keys or DEFAULT_PANEL_FILES.keys())
+    selected = list(panel_keys or DEFAULT_PANEL_SELECTION)
     themes = detect_themes(archive.paths)
 
     for theme in themes:
         skin_paths = find_skin_paths(archive.paths, theme)
         css_text = archive.read_text(f"{skin_paths['res']}default.css")
+        gen_text = archive.read_text(f"{skin_paths['port']}gen.ini")
         if not css_text:
             diagnostics.append(f"{theme or 'default'}: 未找到 default.css")
             continue
         css = parse_ini(css_text)
+        gen_ini = parse_ini(gen_text) if gen_text else {}
+        if not gen_text:
+            diagnostics.append(f"{theme or 'default'}: 未找到 gen.ini，使用面板自身尺寸/VIEW_RECT 兜底")
 
         for panel_key in selected:
             ini_name = DEFAULT_PANEL_FILES.get(panel_key, f"{panel_key}.ini")
@@ -334,7 +478,9 @@ def parse_skin_package(
                 ini_name=ini_name,
                 skin_paths=skin_paths,
                 css=css,
+                gen_ini=gen_ini,
                 include_pressed=include_pressed,
+                size_basis=size_basis,
             )
             if panel:
                 panels.append(panel)
@@ -342,4 +488,3 @@ def parse_skin_package(
                 diagnostics.append(f"{theme or 'default'}: {ini_name} 未找到可替换按键")
 
     return SkinPackage(archive=archive, themes=themes, panels=panels, diagnostics=diagnostics)
-
