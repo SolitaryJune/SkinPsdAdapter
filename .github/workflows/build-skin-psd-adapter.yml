@@ -64,7 +64,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view latest --repo $env:GITHUB_REPOSITORY *> $null
+          gh release upload latest .\dist\SkinPsdAdapter.exe `
+            --repo $env:GITHUB_REPOSITORY `
+            --clobber
           if ($LASTEXITCODE -ne 0) {
             gh release create latest .\dist\SkinPsdAdapter.exe `
               --repo $env:GITHUB_REPOSITORY `
@@ -72,8 +74,4 @@ jobs:
               --title "SkinPsdAdapter latest" `
               --notes "自动构建的 Windows 单文件版本。" `
               --latest
-          } else {
-            gh release upload latest .\dist\SkinPsdAdapter.exe `
-              --repo $env:GITHUB_REPOSITORY `
-              --clobber
           }
