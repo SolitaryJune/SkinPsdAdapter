@@ -61,10 +61,19 @@ jobs:
 
       - name: Publish latest release
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: SkinPsdAdapter latest
-          body: "自动构建的 Windows 单文件版本。"
-          files: dist/SkinPsdAdapter.exe
-          make_latest: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create latest .\dist\SkinPsdAdapter.exe `
+              --repo $env:GITHUB_REPOSITORY `
+              --target $env:GITHUB_SHA `
+              --title "SkinPsdAdapter latest" `
+              --notes "自动构建的 Windows 单文件版本。" `
+              --latest
+          } else {
+            gh release upload latest .\dist\SkinPsdAdapter.exe `
+              --repo $env:GITHUB_REPOSITORY `
+              --clobber
+          }
