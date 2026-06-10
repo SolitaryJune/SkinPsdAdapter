@@ -283,6 +283,14 @@
         </div>
 
         <div class="field">
+          <label for="layoutBasis">按键定位</label>
+          <select id="layoutBasis">
+            <option value="ini">INI VIEW_RECT</option>
+            <option value="til_scaled">TIL SOURCE_RECT 缩放定位</option>
+          </select>
+        </div>
+
+        <div class="field">
           <label for="resizeMode">按键缩放</label>
           <select id="resizeMode">
             <option value="stretch">拉伸到目标框</option>
@@ -376,6 +384,7 @@
       form.append("base_package", basePackage);
       form.append("panels", selectedPanels());
       form.append("size_basis", $("sizeBasis").value);
+      form.append("layout_basis", $("layoutBasis").value);
       form.append("resize_mode", $("resizeMode").value);
       form.append("layer_mode", $("layerMode").value);
       form.append("include_pressed", $("includePressed").checked ? "true" : "false");

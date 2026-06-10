@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from .services.adapter import ResizeMode, SkinAdapter, image_to_png_bytes
 from .services.psd_exporter import PsdLayerMode, export_adapted_psd
 from .services.psd_reader import SourceImage, load_source_images
-from .services.skin_parser import DEFAULT_PANEL_SELECTION, PanelSizeBasis, SkinPackage, parse_skin_package
+from .services.skin_parser import DEFAULT_PANEL_SELECTION, PanelLayoutBasis, PanelSizeBasis, SkinPackage, parse_skin_package
 
 
 def _app_root_dir() -> Path:
@@ -68,6 +68,7 @@ def _summarize_skin(skin: SkinPackage) -> dict:
                 "ini_path": panel.ini_path,
                 "size": [panel.width, panel.height],
                 "size_note": panel.size_note,
+                "layout_note": panel.layout_note,
                 "key_count": len(panel.keys),
                 "atlas_count": len({ref.png_path for key in panel.keys for ref in key.style_refs}),
             }
@@ -84,6 +85,7 @@ def _build_result(
     panel_keys: List[str],
     resize_mode: ResizeMode,
     size_basis: PanelSizeBasis,
+    layout_basis: PanelLayoutBasis,
     include_pressed: bool,
     darken_pressed: bool,
 ):
@@ -100,6 +102,7 @@ def _build_result(
         panel_keys=panel_keys,
         include_pressed=include_pressed,
         size_basis=size_basis,
+        layout_basis=layout_basis,
     )
     if not skin.panels:
         _close_sources(sources)
@@ -132,6 +135,7 @@ async def analyze(
     base_package: UploadFile = File(...),
     panels: str = Form(",".join(DEFAULT_PANEL_SELECTION)),
     size_basis: PanelSizeBasis = Form("default"),
+    layout_basis: PanelLayoutBasis = Form("ini"),
     include_pressed: bool = Form(True),
 ) -> JSONResponse:
     design_data = await _read_upload(design_file)
@@ -146,6 +150,7 @@ async def analyze(
             panel_keys=_split_panels(panels),
             include_pressed=include_pressed,
             size_basis=size_basis,
+            layout_basis=layout_basis,
         )
         return JSONResponse(
             {
@@ -178,6 +183,7 @@ async def preview(
     panels: str = Form(",".join(DEFAULT_PANEL_SELECTION)),
     resize_mode: ResizeMode = Form("stretch"),
     size_basis: PanelSizeBasis = Form("default"),
+    layout_basis: PanelLayoutBasis = Form("ini"),
     include_pressed: bool = Form(True),
     darken_pressed: bool = Form(True),
 ) -> JSONResponse:
@@ -193,6 +199,7 @@ async def preview(
             panel_keys=_split_panels(panels),
             resize_mode=resize_mode,
             size_basis=size_basis,
+            layout_basis=layout_basis,
             include_pressed=include_pressed,
             darken_pressed=darken_pressed,
         )
@@ -237,6 +244,7 @@ async def export_psd(
     panels: str = Form(",".join(DEFAULT_PANEL_SELECTION)),
     resize_mode: ResizeMode = Form("stretch"),
     size_basis: PanelSizeBasis = Form("default"),
+    layout_basis: PanelLayoutBasis = Form("ini"),
     include_pressed: bool = Form(True),
     darken_pressed: bool = Form(True),
     layer_mode: PsdLayerMode = Form("source_layers"),
@@ -253,6 +261,7 @@ async def export_psd(
             panel_keys=_split_panels(panels),
             resize_mode=resize_mode,
             size_basis=size_basis,
+            layout_basis=layout_basis,
             include_pressed=include_pressed,
             darken_pressed=darken_pressed,
         )
@@ -284,6 +293,7 @@ async def export_package(
     panels: str = Form(",".join(DEFAULT_PANEL_SELECTION)),
     resize_mode: ResizeMode = Form("stretch"),
     size_basis: PanelSizeBasis = Form("default"),
+    layout_basis: PanelLayoutBasis = Form("ini"),
     include_pressed: bool = Form(True),
     darken_pressed: bool = Form(True),
 ) -> Response:
@@ -299,6 +309,7 @@ async def export_package(
             panel_keys=_split_panels(panels),
             resize_mode=resize_mode,
             size_basis=size_basis,
+            layout_basis=layout_basis,
             include_pressed=include_pressed,
             darken_pressed=darken_pressed,
         )

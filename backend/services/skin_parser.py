@@ -18,6 +18,7 @@ from .ini_parser import (
 
 STYLE_IMAGE_PROPS = ("NM_IMG", "HL_IMG")
 PanelSizeBasis = Literal["default", "image"]
+PanelLayoutBasis = Literal["ini", "til_scaled"]
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class PanelLayout:
     height: int
     keys: List[KeySlot]
     size_note: str = ""
+    layout_note: str = ""
 
     @property
     def title(self) -> str:
@@ -353,6 +355,89 @@ def _style_refs_for_section(
     )
 
 
+def _select_layout_ref(refs: Sequence[StyleImageRef]) -> Optional[StyleImageRef]:
+    """选择一个最适合反推按键位置的 TIL 引用。
+
+    常态图 `NM_IMG` 比按压态 `HL_IMG` 更适合作为布局来源；如果没有常态图，再退回第一个引用。
+    """
+
+    for ref in refs:
+        if ref.prop == "NM_IMG":
+            return ref
+    return refs[0] if refs else None
+
+
+def _read_til_slices_cached(
+    archive: SkinArchive,
+    cache: Dict[str, Dict[int, Rect]],
+    til_path: str,
+) -> Dict[int, Rect]:
+    if til_path in cache:
+        return cache[til_path]
+    til_text = archive.read_text(til_path)
+    slices = parse_til_slices(til_text or "")
+    cache[til_path] = slices
+    return slices
+
+
+def _resolve_til_layout_rects(
+    archive: SkinArchive,
+    raw_keys: Sequence[tuple[str, Rect, Dict[str, str], List[StyleImageRef]]],
+    width: int,
+    height: int,
+) -> tuple[Dict[str, Rect], str]:
+    """用 TIL 的 SOURCE_RECT 反推面板按键位置。
+
+    TIL 坐标本质上是图集坐标，不一定等于屏幕坐标；贴纸包里常见 640/641 高度的外框。
+    因此这里先取当前面板所有 TIL 切片的最大边界，再只对明显不一致的轴做缩放。
+    """
+
+    til_cache: Dict[str, Dict[int, Rect]] = {}
+    candidates: List[tuple[str, Rect]] = []
+    fallback_count = 0
+    max_right = 0
+    max_bottom = 0
+
+    for section, view_rect, values, refs in raw_keys:
+        center = str(values.get("CENTER", "")).strip().strip("'\"")
+        if _is_full_panel_key(view_rect, width, height, center):
+            continue
+
+        ref = _select_layout_ref(refs)
+        if not ref:
+            fallback_count += 1
+            continue
+
+        slices = _read_til_slices_cached(archive, til_cache, ref.til_path)
+        til_rect = slices.get(ref.tile_index)
+        if not til_rect:
+            fallback_count += 1
+            continue
+
+        candidates.append((section, til_rect))
+        max_right = max(max_right, til_rect.right)
+        max_bottom = max(max_bottom, til_rect.bottom)
+
+    if not candidates or max_right <= 0 or max_bottom <= 0:
+        return {}, "INI VIEW_RECT"
+
+    scale_x = width / max_right if abs(max_right - width) > 8 else 1.0
+    scale_y = height / max_bottom if abs(max_bottom - height) > 8 else 1.0
+    rects: Dict[str, Rect] = {}
+    for section, til_rect in candidates:
+        rects[section] = Rect(
+            x=round(til_rect.x * scale_x),
+            y=round(til_rect.y * scale_y),
+            w=max(1, round(til_rect.w * scale_x)),
+            h=max(1, round(til_rect.h * scale_y)),
+        )
+
+    note = f"TIL SOURCE_RECT 缩放定位 bounds={max_right}x{max_bottom}, scale={scale_x:.4f},{scale_y:.4f}"
+    if fallback_count:
+        note += f", {fallback_count} 个键回退 VIEW_RECT"
+    return rects, note
+
+
 def parse_til_slices(til_text: str) -> Dict[int, Rect]:
     """把 .til 文件里的 IMGn/SOURCE_RECT 解析成切片坐标。"""
 
@@ -378,6 +463,7 @@ def parse_panel_layout(
     gen_ini: Dict[str, Dict[str, str]],
     include_pressed: bool,
     size_basis: PanelSizeBasis,
+    layout_basis: PanelLayoutBasis,
 ) -> Optional[PanelLayout]:
     ini_path = f"{skin_paths['port']}{ini_name}"
     ini_text = archive.read_text(ini_path)
@@ -410,6 +496,16 @@ def parse_panel_layout(
         size_basis=size_basis,
     )
     keys: List[KeySlot] = []
+    layout_rects: Dict[str, Rect] = {}
+    layout_note = "INI VIEW_RECT"
+    if layout_basis == "til_scaled":
+        layout_rects, layout_note = _resolve_til_layout_rects(
+            archive=archive,
+            raw_keys=raw_keys,
+            width=width,
+            height=height,
+        )
+
     for section, rect, values, refs in raw_keys:
         center = str(values.get("CENTER", "")).strip().strip("'\"")
         if _is_full_panel_key(rect, width, height, center):
@@ -420,7 +516,7 @@ def parse_panel_layout(
         keys.append(
             KeySlot(
                 section=section,
-                rect=rect,
+                rect=layout_rects.get(section, rect),
                 center=center,
                 back_style=str(values.get("BACK_STYLE", "")),
                 fore_style=str(values.get("FORE_STYLE", "")),
@@ -439,6 +535,7 @@ def parse_panel_layout(
         height=height,
         keys=keys,
         size_note=size_note,
+        layout_note=layout_note,
     )
 
 
@@ -448,6 +545,7 @@ def parse_skin_package(
     panel_keys: Optional[Sequence[str]] = None,
     include_pressed: bool = True,
     size_basis: PanelSizeBasis = "default",
+    layout_basis: PanelLayoutBasis = "ini",
 ) -> SkinPackage:
     """解析目标底包，返回适配所需的面板和图集引用。"""
 
@@ -481,6 +579,7 @@ def parse_skin_package(
                 gen_ini=gen_ini,
                 include_pressed=include_pressed,
                 size_basis=size_basis,
+                layout_basis=layout_basis,
             )
             if panel:
                 panels.append(panel)
