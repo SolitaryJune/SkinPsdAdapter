@@ -57,10 +57,48 @@ async def _read_upload(upload: UploadFile) -> bytes:
     return data
 
 
+def _layout_signal_to_dict(signal) -> dict:
+    return {
+        "theme": signal.theme,
+        "structure": signal.structure,
+        "panel": signal.panel,
+        "key_count": signal.key_count,
+        "foreground_images": signal.foreground_images,
+        "background_images": signal.background_images,
+        "valid_til_images": signal.valid_til_images,
+        "max_til_slice_count": signal.max_til_slice_count,
+    }
+
+
+def _foreground_detection_to_dict(detection) -> dict | None:
+    if not detection:
+        return None
+    return {
+        "type": detection.type,
+        "confidence": detection.confidence,
+        "normal_score": detection.normal_score,
+        "sticker_score": detection.sticker_score,
+        "css_file_count": detection.css_file_count,
+        "reason": detection.reason,
+        "normal_layouts": [_layout_signal_to_dict(item) for item in detection.normal_layouts],
+        "sticker_layouts": [_layout_signal_to_dict(item) for item in detection.sticker_layouts],
+        "path_candidates": [
+            {
+                "theme": item.theme,
+                "structure": item.structure,
+                "port": item.port,
+                "res": item.res,
+            }
+            for item in detection.path_candidates
+        ],
+    }
+
+
 def _summarize_skin(skin: SkinPackage) -> dict:
     return {
         "themes": skin.themes,
         "diagnostics": skin.diagnostics,
+        "foreground_detection": _foreground_detection_to_dict(skin.foreground_detection),
         "panels": [
             {
                 "theme": panel.theme or "default",
@@ -70,6 +108,10 @@ def _summarize_skin(skin: SkinPackage) -> dict:
                 "size_note": panel.size_note,
                 "layout_note": panel.layout_note,
                 "key_count": len(panel.keys),
+                "sample_keys": [
+                    key.debug_name
+                    for key in sorted(panel.keys, key=lambda item: (item.rect.y, item.rect.x))[:12]
+                ],
                 "atlas_count": len({ref.png_path for key in panel.keys for ref in key.style_refs}),
             }
             for panel in skin.panels
