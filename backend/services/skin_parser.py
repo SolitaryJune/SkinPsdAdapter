@@ -18,7 +18,7 @@ from .keyboard_templates import infer_layout_type, match_preset_by_position
 
 
 STYLE_IMAGE_PROPS = ("NM_IMG", "HL_IMG")
-PanelSizeBasis = Literal["default", "image"]
+PanelSizeBasis = Literal["auto", "default", "image"]
 PanelLayoutBasis = Literal["ini", "til_scaled"]
 
 
@@ -262,10 +262,10 @@ def _get_panel_size(
 ) -> tuple[int, int, str]:
     """按小程序前端规则解析面板键盘区尺寸。
 
-    默认口径：
-    1. 当前面板 [PANEL].SIZE；
-    2. gen.ini [PANEL].SIZE；
-    3. PNG 图集实际尺寸；
+    auto/default 都走小程序贴纸页“以默认为准”的口径：
+    1. BACK_STYLE 指向的 PNG 图集实际尺寸；
+    2. 当前面板 [PANEL].SIZE；
+    3. gen.ini [PANEL].SIZE；
     4. KEY 的 VIEW_RECT 最大范围；
     5. 兜底 1080x595。
 
@@ -277,8 +277,12 @@ def _get_panel_size(
     rects = [rect for rect, _center in rect_infos]
     panel_size = _get_ini_size(ini, "PANEL")
     gen_size = _get_ini_size(gen_ini, "PANEL")
-    initial_size = panel_size or gen_size or image_size
-    source = "PANEL.SIZE" if panel_size else ("gen.ini PANEL.SIZE" if gen_size else ("PNG IHDR" if image_size else "VIEW_RECT"))
+    if size_basis in ("auto", "default") and image_size:
+        initial_size = image_size
+        source = "PNG IHDR"
+    else:
+        initial_size = panel_size or gen_size or image_size
+        source = "PANEL.SIZE" if panel_size else ("gen.ini PANEL.SIZE" if gen_size else ("PNG IHDR" if image_size else "VIEW_RECT"))
 
     if initial_size:
         width, height = initial_size
@@ -309,7 +313,20 @@ def _get_panel_size(
         height = full_panel_rect[0].h
         source = f"{source}, 按整面板 KEY 收敛 {old_height}->{height}"
 
-    return width, height, source
+    if size_basis == "auto" and image_size:
+        image_width, image_height = image_size
+        if (width, height) != image_size:
+            return (
+                width,
+                height,
+                f"自动识别: PNG IHDR {image_width}x{image_height}，小程序默认解析 {width}x{height}（{source}）",
+            )
+        return width, height, f"自动识别: PNG IHDR 与小程序默认一致 {width}x{height}（{source}）"
+
+    if size_basis == "auto":
+        return width, height, f"自动识别: 未读到 PNG 尺寸，使用小程序默认 {width}x{height}（{source}）"
+
+    return width, height, f"以默认为准: {source}"
 
 
 def _is_full_panel_key(rect: Rect, width: int, height: int, center: str) -> bool:
@@ -953,7 +970,7 @@ def parse_skin_package(
     filename: str,
     panel_keys: Optional[Sequence[str]] = None,
     include_pressed: bool = True,
-    size_basis: PanelSizeBasis = "default",
+    size_basis: PanelSizeBasis = "auto",
     layout_basis: PanelLayoutBasis = "ini",
 ) -> SkinPackage:
     """解析目标底包，返回适配所需的面板和图集引用。"""
