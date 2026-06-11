@@ -86,6 +86,8 @@
     }
 
     input[type="file"],
+    input[type="number"],
+    input[type="text"],
     select {
       width: 100%;
       border: 1px solid var(--line);
@@ -94,6 +96,12 @@
       color: var(--text);
       padding: 10px;
       min-height: 42px;
+    }
+
+    input[type="number"],
+    input[type="text"] {
+      min-height: 36px;
+      padding: 7px 8px;
     }
 
     .checks {
@@ -124,6 +132,25 @@
       grid-template-columns: 1fr 1fr;
       gap: 10px;
       margin-top: 18px;
+    }
+
+    .inline-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .mini-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .mini-actions button {
+      min-height: 36px;
+      font-size: 13px;
+      padding: 0 8px;
     }
 
     button {
@@ -227,6 +254,100 @@
     .status.warn { border-color: #f2cb8c; color: var(--warn); background: #fff8ee; }
     .status.bad { border-color: #efaaa5; color: var(--bad); background: #fff5f4; }
 
+    .source-editor {
+      display: grid;
+      gap: 12px;
+    }
+
+    .source-canvas-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #eef3f6;
+      max-height: 520px;
+    }
+
+    .source-canvas {
+      position: relative;
+      width: min(100%, 720px);
+      min-height: 220px;
+      margin: 0 auto;
+      user-select: none;
+      cursor: crosshair;
+      background:
+        linear-gradient(90deg, rgba(24, 118, 209, 0.08) 1px, transparent 1px),
+        linear-gradient(rgba(24, 118, 209, 0.08) 1px, transparent 1px),
+        #fff;
+      background-size: 24px 24px;
+    }
+
+    .source-canvas img {
+      display: block;
+      width: 100%;
+      height: auto;
+      pointer-events: none;
+    }
+
+    .grid-slot {
+      position: absolute;
+      border: 2px solid #1684c7;
+      background: rgba(22, 132, 199, 0.08);
+      color: #0b6295;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      text-align: center;
+    }
+
+    .grid-slot.active {
+      border-color: #d6405f;
+      background: rgba(214, 64, 95, 0.12);
+      color: #b4213f;
+    }
+
+    .grid-slot.draft {
+      border-style: dashed;
+      border-color: #b26a00;
+      background: rgba(178, 106, 0, 0.12);
+    }
+
+    .slot-table-wrap {
+      max-height: 260px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .slot-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      background: #fff;
+    }
+
+    .slot-table th,
+    .slot-table td {
+      border-bottom: 1px solid var(--line);
+      padding: 6px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .slot-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f6f9fb;
+      color: var(--muted);
+    }
+
+    .slot-table input {
+      min-width: 68px;
+    }
+
     @media (max-width: 820px) {
       main { width: min(100vw - 20px, 680px); margin-top: 12px; }
       header { display: block; }
@@ -309,6 +430,84 @@
           </select>
         </div>
 
+        <div class="field source-editor">
+          <label>源图片模板</label>
+          <select id="sourceLayoutMode">
+            <option value="none">不使用：按底包比例裁设计图</option>
+            <option value="custom">使用手动格子：按源图片格子裁切</option>
+          </select>
+          <select id="sourcePanelKey">
+            <option value="py_26">当前格子面板：26 键</option>
+            <option value="en_26">当前格子面板：英文 26</option>
+            <option value="py_9">当前格子面板：9 键</option>
+            <option value="en_9">当前格子面板：英文 9</option>
+            <option value="bh">当前格子面板：笔画</option>
+            <option value="num_9">当前格子面板：123</option>
+            <option value="num_9h">当前格子面板：数字扩展</option>
+            <option value="symbol">当前格子面板：符号</option>
+            <option value="hw_grid">当前格子面板：手写</option>
+          </select>
+          <div class="inline-grid">
+            <div>
+              <label for="sourceCanvasW">整体宽</label>
+              <input id="sourceCanvasW" type="number" min="1" step="1" placeholder="1080" />
+            </div>
+            <div>
+              <label for="sourceCanvasH">整体高</label>
+              <input id="sourceCanvasH" type="number" min="1" step="1" placeholder="750" />
+            </div>
+          </div>
+          <div class="inline-grid">
+            <div>
+              <label for="sourceRatioW">宽比</label>
+              <input id="sourceRatioW" type="number" min="1" step="1" placeholder="1080" />
+            </div>
+            <div>
+              <label for="sourceRatioH">高比</label>
+              <input id="sourceRatioH" type="number" min="1" step="1" placeholder="750" />
+            </div>
+          </div>
+          <div class="inline-grid">
+            <div>
+              <label for="sourceImageW">图片宽</label>
+              <input id="sourceImageW" type="number" min="1" step="1" placeholder="自动读取" readonly />
+            </div>
+            <div>
+              <label for="sourceImageH">图片高</label>
+              <input id="sourceImageH" type="number" min="1" step="1" placeholder="自动读取" readonly />
+            </div>
+          </div>
+          <div class="inline-grid">
+            <div>
+              <label for="sourceKeyboardX">键盘区 X</label>
+              <input id="sourceKeyboardX" type="number" min="0" step="1" placeholder="0" />
+            </div>
+            <div>
+              <label for="sourceKeyboardY">键盘区 Y</label>
+              <input id="sourceKeyboardY" type="number" min="0" step="1" placeholder="180" />
+            </div>
+          </div>
+          <div class="inline-grid">
+            <div>
+              <label for="sourceKeyboardW">键盘区 W</label>
+              <input id="sourceKeyboardW" type="number" min="1" step="1" placeholder="1080" />
+            </div>
+            <div>
+              <label for="sourceKeyboardH">键盘区 H</label>
+              <input id="sourceKeyboardH" type="number" min="1" step="1" placeholder="570" />
+            </div>
+          </div>
+          <div class="mini-actions">
+            <button id="detectImageSizeBtn" type="button" class="secondary">识别图片尺寸</button>
+            <button id="applyRatioBtn" type="button" class="secondary">应用宽高比</button>
+            <button id="generate26Btn" type="button" class="secondary">生成 26 键格子</button>
+            <button id="generateFromBaseBtn" type="button" class="secondary">用底包格子生成</button>
+            <button id="addSlotBtn" type="button" class="secondary">新增格子</button>
+            <button id="clearSlotsBtn" type="button" class="secondary">清空格子</button>
+          </div>
+          <div class="status" id="sourceLayoutStatus">可填整体尺寸，也可在右侧画布拖拽画格子。</div>
+        </div>
+
         <label class="check">
           <input id="includePressed" type="checkbox" checked />
           同时替换按压态 HL_IMG
@@ -344,6 +543,34 @@
 
         <section class="panel-block">
           <div class="panel-title">
+            <h2>源图片格子</h2>
+            <span id="slotCount" class="subtle">0 个格子</span>
+          </div>
+          <div class="source-canvas-wrap">
+            <div id="sourceCanvas" class="source-canvas">
+              <img id="sourceImagePreview" alt="" />
+            </div>
+          </div>
+          <div class="slot-table-wrap" style="margin-top:12px;">
+            <table class="slot-table">
+              <thead>
+                <tr>
+                  <th>键名</th>
+                  <th>面板</th>
+                  <th>X</th>
+                  <th>Y</th>
+                  <th>W</th>
+                  <th>H</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="slotTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-block">
+          <div class="panel-title">
             <h2>预览</h2>
           </div>
           <div id="previews" class="preview-grid"></div>
@@ -355,6 +582,29 @@
   <script>
     const $ = (id) => document.getElementById(id);
     const buttons = ["analyzeBtn", "previewBtn", "psdBtn", "packageBtn"].map($);
+    const sourceSlots = [];
+    let lastAnalyzeData = null;
+    let sourcePreviewUrl = "";
+    let activeSlotIndex = -1;
+    let draftSlot = null;
+    let dragStart = null;
+    let keyboardRectTouched = false;
+
+    // 这组坐标直接按小程序 packageSkin/shared/keyboard-layout-helper.ts 的 py_26_chinese 模板维护。
+    // 前端生成源格子时先映射到“键盘区”，再由后端按源图片实际像素缩放裁切。
+    const PY26_POSITION_PRESET = [
+      ["Q", 0, 0, 115, 165], ["W", 114, 0, 115, 165], ["E", 228, 0, 115, 165], ["R", 342, 0, 115, 165], ["T", 456, 0, 115, 165],
+      ["Y", 570, 0, 115, 165], ["U", 684, 0, 115, 165], ["I", 798, 0, 115, 165], ["O", 912, 0, 115, 165], ["P", 1026, 0, 115, 165],
+      ["A", 58, 164, 113, 165], ["S", 170, 164, 113, 165], ["D", 282, 164, 113, 165], ["F", 394, 164, 113, 165], ["G", 506, 164, 113, 165],
+      ["H", 618, 164, 113, 165], ["J", 730, 164, 113, 165], ["K", 842, 164, 113, 165], ["L", 954, 164, 113, 165],
+      ["大写", 0, 328, 171, 165], ["Z", 170, 328, 113, 165], ["X", 282, 328, 113, 165], ["C", 394, 328, 113, 165],
+      ["V", 506, 328, 113, 165], ["B", 618, 328, 113, 165], ["N", 730, 328, 113, 165], ["M", 842, 328, 113, 165], ["删除", 954, 328, 227, 165],
+      ["符号", 0, 492, 113, 165], ["123", 112, 492, 113, 165], [",", 224, 492, 113, 165], ["空格", 336, 492, 397, 165],
+      [".", 732, 492, 113, 165], ["中/英", 844, 492, 113, 165], ["发送", 956, 492, 171, 165]
+    ];
+
+    const PY26_BASE_W = Math.max(...PY26_POSITION_PRESET.map((item) => item[1] + item[3]));
+    const PY26_BASE_H = Math.max(...PY26_POSITION_PRESET.map((item) => item[2] + item[4]));
 
     function setBusy(isBusy) {
       buttons.forEach((button) => { button.disabled = isBusy; });
@@ -370,6 +620,92 @@
       return Array.from(document.querySelectorAll('input[name="panel"]:checked'))
         .map((item) => item.value)
         .join(",");
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function numValue(id, fallback = 0) {
+      const value = Number($(id).value);
+      return Number.isFinite(value) && value > 0 ? value : fallback;
+    }
+
+    function sourceCanvasSize() {
+      return {
+        width: numValue("sourceCanvasW", 0),
+        height: numValue("sourceCanvasH", 0)
+      };
+    }
+
+    function currentSourcePanelKey() {
+      return $("sourcePanelKey").value || "py_26";
+    }
+
+    function defaultKeyboardRectForCanvas(canvas) {
+      // 参考用户给的逻辑模板：1080*60 + 1080*120 + 1080*570 = 1080*750。
+      if (Math.round(canvas.width) === 1080 && Math.round(canvas.height) === 750) {
+        return { x: 0, y: 180, w: 1080, h: 570 };
+      }
+      return { x: 0, y: 0, w: canvas.width || 1080, h: canvas.height || 595 };
+    }
+
+    function sourceKeyboardRect() {
+      const canvas = sourceCanvasSize();
+      const x = Number($("sourceKeyboardX").value);
+      const y = Number($("sourceKeyboardY").value);
+      const w = Number($("sourceKeyboardW").value);
+      const h = Number($("sourceKeyboardH").value);
+      return {
+        x: Number.isFinite(x) && x >= 0 ? x : 0,
+        y: Number.isFinite(y) && y >= 0 ? y : 0,
+        w: Number.isFinite(w) && w > 0 ? w : (canvas.width || 1080),
+        h: Number.isFinite(h) && h > 0 ? h : (canvas.height || 595)
+      };
+    }
+
+    function setKeyboardRect(rect, markTouched = false) {
+      $("sourceKeyboardX").value = Math.round(rect.x);
+      $("sourceKeyboardY").value = Math.round(rect.y);
+      $("sourceKeyboardW").value = Math.round(rect.w);
+      $("sourceKeyboardH").value = Math.round(rect.h);
+      keyboardRectTouched = keyboardRectTouched || markTouched;
+    }
+
+    function refreshKeyboardRectDefault() {
+      if (!keyboardRectTouched) setKeyboardRect(defaultKeyboardRectForCanvas(sourceCanvasSize()));
+    }
+
+    function setSourceLayoutStatus(text, type = "") {
+      const node = $("sourceLayoutStatus");
+      node.className = `status ${type}`;
+      node.textContent = text;
+    }
+
+    function buildSourceLayoutPayload() {
+      if ($("sourceLayoutMode").value !== "custom") return "";
+      const canvas = sourceCanvasSize();
+      if (!canvas.width || !canvas.height || sourceSlots.length === 0) return "";
+      return JSON.stringify({
+        canvas_width: canvas.width,
+        canvas_height: canvas.height,
+        slots: sourceSlots.map((slot) => {
+          const x = Math.min(canvas.width - 1, Math.max(0, Math.round(slot.x)));
+          const y = Math.min(canvas.height - 1, Math.max(0, Math.round(slot.y)));
+          return {
+            panel_key: slot.panel_key || "",
+            name: slot.name || "",
+            x,
+            y,
+            w: Math.max(1, Math.min(canvas.width - x, Math.round(slot.w))),
+            h: Math.max(1, Math.min(canvas.height - y, Math.round(slot.h)))
+          };
+        })
+      });
     }
 
     function makeFormData(extra = {}) {
@@ -390,8 +726,178 @@
       form.append("layer_mode", $("layerMode").value);
       form.append("include_pressed", $("includePressed").checked ? "true" : "false");
       form.append("darken_pressed", $("darkenPressed").checked ? "true" : "false");
+      form.append("source_layout", buildSourceLayoutPayload());
       Object.entries(extra).forEach(([key, value]) => form.append(key, value));
       return form;
+    }
+
+    function ensureSourceCanvasFromImage(width, height, overwriteCanvas = false) {
+      if (!$("sourceCanvasW").value) $("sourceCanvasW").value = width;
+      if (!$("sourceCanvasH").value) $("sourceCanvasH").value = height;
+      if (overwriteCanvas) {
+        $("sourceCanvasW").value = width;
+        $("sourceCanvasH").value = height;
+      }
+      if (!$("sourceRatioW").value) $("sourceRatioW").value = width;
+      if (!$("sourceRatioH").value) $("sourceRatioH").value = height;
+      $("sourceImageW").value = width;
+      $("sourceImageH").value = height;
+      renderSourceSlots();
+    }
+
+    function fillSourceImageFromAnalyze(data) {
+      const source = data?.sources?.[0];
+      const width = Number(source?.size?.[0]);
+      const height = Number(source?.size?.[1]);
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+      ensureSourceCanvasFromImage(width, height, false);
+      setSourceLayoutStatus(`后端已识别设计稿渲染尺寸：${width} × ${height}`, "ok");
+    }
+
+    async function loadDesignImageInfo() {
+      const file = $("designFile").files[0];
+      if (!file) throw new Error("请先选择设计稿。");
+      if (sourcePreviewUrl) URL.revokeObjectURL(sourcePreviewUrl);
+      sourcePreviewUrl = URL.createObjectURL(file);
+      const img = $("sourceImagePreview");
+      const info = await new Promise((resolve, reject) => {
+        const probe = new Image();
+        probe.onload = () => resolve({ width: probe.naturalWidth, height: probe.naturalHeight });
+        probe.onerror = () => reject(new Error("无法读取图片尺寸；PSD 请先用整体逻辑尺寸手动填写。"));
+        probe.src = sourcePreviewUrl;
+      });
+      img.src = sourcePreviewUrl;
+      img.style.display = "block";
+      ensureSourceCanvasFromImage(info.width, info.height);
+      return info;
+    }
+
+    async function loadDesignSourceInfo() {
+      const file = $("designFile").files[0];
+      if (!file) throw new Error("请先选择设计稿。");
+
+      const form = new FormData();
+      form.append("design_file", file);
+      const response = await fetch("/api/source-info", { method: "POST", body: form });
+      if (!response.ok) throw new Error(await parseError(response));
+      const data = await response.json();
+      const source = data?.sources?.[0];
+      const width = Number(source?.size?.[0]);
+      const height = Number(source?.size?.[1]);
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        throw new Error("后端没有识别到有效的设计稿尺寸。");
+      }
+      ensureSourceCanvasFromImage(width, height, true);
+      return { width, height };
+    }
+
+    function renderSourceSlots() {
+      const canvas = $("sourceCanvas");
+      const image = $("sourceImagePreview");
+      const canvasSize = sourceCanvasSize();
+      const visualWidth = canvas.clientWidth || image.clientWidth || 1;
+      const ratio = canvasSize.width > 0 ? visualWidth / canvasSize.width : 1;
+      const visualHeight = canvasSize.height > 0 ? Math.max(220, Math.round(canvasSize.height * ratio)) : 220;
+      canvas.style.minHeight = `${visualHeight}px`;
+      image.style.height = image.src ? `${visualHeight}px` : "";
+      image.style.display = image.src ? "block" : "none";
+
+      Array.from(canvas.querySelectorAll(".grid-slot")).forEach((node) => node.remove());
+      const allSlots = draftSlot ? sourceSlots.concat([draftSlot]) : sourceSlots;
+      allSlots.forEach((slot, index) => {
+        const div = document.createElement("div");
+        div.className = `grid-slot ${index === activeSlotIndex ? "active" : ""} ${slot === draftSlot ? "draft" : ""}`;
+        div.style.left = `${slot.x * ratio}px`;
+        div.style.top = `${slot.y * ratio}px`;
+        div.style.width = `${Math.max(1, slot.w * ratio)}px`;
+        div.style.height = `${Math.max(1, slot.h * ratio)}px`;
+        div.textContent = slot.name || `${Math.round(slot.w)}×${Math.round(slot.h)}`;
+        div.addEventListener("pointerdown", (event) => event.stopPropagation());
+        div.addEventListener("click", (event) => {
+          event.stopPropagation();
+          if (slot !== draftSlot) {
+            activeSlotIndex = index;
+            renderSourceSlots();
+          }
+        });
+        canvas.appendChild(div);
+      });
+
+      $("slotCount").textContent = `${sourceSlots.length} 个格子`;
+      renderSlotTable();
+    }
+
+    function renderSlotTable() {
+      const body = $("slotTableBody");
+      body.innerHTML = "";
+      sourceSlots.forEach((slot, index) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td><input data-field="name" data-index="${index}" type="text" value="${escapeHtml(slot.name || "")}" /></td>
+          <td><input data-field="panel_key" data-index="${index}" type="text" value="${escapeHtml(slot.panel_key || "")}" /></td>
+          <td><input data-field="x" data-index="${index}" type="number" value="${Math.round(slot.x)}" /></td>
+          <td><input data-field="y" data-index="${index}" type="number" value="${Math.round(slot.y)}" /></td>
+          <td><input data-field="w" data-index="${index}" type="number" value="${Math.round(slot.w)}" /></td>
+          <td><input data-field="h" data-index="${index}" type="number" value="${Math.round(slot.h)}" /></td>
+          <td><button type="button" data-delete="${index}" class="secondary">删</button></td>
+        `;
+        if (index === activeSlotIndex) row.style.background = "#fff7f8";
+        body.appendChild(row);
+      });
+    }
+
+    function replaceSlots(slots, message) {
+      sourceSlots.splice(0, sourceSlots.length, ...slots);
+      activeSlotIndex = sourceSlots.length ? 0 : -1;
+      $("sourceLayoutMode").value = sourceSlots.length ? "custom" : "none";
+      renderSourceSlots();
+      if (message) setSourceLayoutStatus(message, "ok");
+    }
+
+    function py26TemplateSlots(rect) {
+      const sx = rect.w / PY26_BASE_W;
+      const sy = rect.h / PY26_BASE_H;
+      const panelKey = currentSourcePanelKey();
+      return PY26_POSITION_PRESET.map(([name, x, y, w, h]) => ({
+        panel_key: panelKey,
+        name,
+        x: rect.x + x * sx,
+        y: rect.y + y * sy,
+        w: w * sx,
+        h: h * sy
+      }));
+    }
+
+    function slotsFromAnalyze(panelKey = currentSourcePanelKey()) {
+      const panel = lastAnalyzeData?.skin?.panels?.find((item) => item.panel_key === panelKey) || lastAnalyzeData?.skin?.panels?.[0];
+      if (!panel || !panel.keys?.length) throw new Error("请先分析底包，才能用底包格子生成。");
+      $("sourcePanelKey").value = panel.panel_key;
+      const canvas = sourceCanvasSize();
+      if (!canvas.width) $("sourceCanvasW").value = panel.size[0];
+      if (!canvas.height) $("sourceCanvasH").value = panel.size[1];
+      refreshKeyboardRectDefault();
+      const rect = sourceKeyboardRect();
+      const sx = rect.w / Math.max(1, panel.size[0]);
+      const sy = rect.h / Math.max(1, panel.size[1]);
+      return panel.keys.map((key) => ({
+        panel_key: panel.panel_key,
+        name: key.name,
+        x: rect.x + key.x * sx,
+        y: rect.y + key.y * sy,
+        w: key.w * sx,
+        h: key.h * sy
+      }));
+    }
+
+    function canvasPoint(event) {
+      const canvas = $("sourceCanvas");
+      const rect = canvas.getBoundingClientRect();
+      const canvasSize = sourceCanvasSize();
+      const ratio = canvasSize.width > 0 ? rect.width / canvasSize.width : 1;
+      return {
+        x: Math.min(canvasSize.width || 0, Math.max(0, (event.clientX - rect.left) / ratio)),
+        y: Math.min(canvasSize.height || 0, Math.max(0, (event.clientY - rect.top) / ratio))
+      };
     }
 
     async function parseError(response) {
@@ -427,6 +933,8 @@
         setBusy(true);
         setStatus("正在分析 PSD 和底包结构...");
         const data = await postJson("/api/analyze");
+        lastAnalyzeData = data;
+        fillSourceImageFromAnalyze(data);
         $("report").textContent = JSON.stringify(data, null, 2);
         setStatus("分析完成。", "ok");
       } catch (error) {
@@ -434,6 +942,160 @@
       } finally {
         setBusy(false);
       }
+    });
+
+    $("designFile").addEventListener("change", async () => {
+      try {
+        await loadDesignImageInfo();
+        const size = sourceCanvasSize();
+        setSourceLayoutStatus(`已识别设计图尺寸：${size.width} × ${size.height}`, "ok");
+      } catch (error) {
+        setSourceLayoutStatus(error.message, "warn");
+      }
+    });
+
+    $("detectImageSizeBtn").addEventListener("click", async () => {
+      try {
+        let info;
+        try {
+          info = await loadDesignImageInfo();
+          ensureSourceCanvasFromImage(info.width, info.height, true);
+        } catch (_) {
+          info = await loadDesignSourceInfo();
+        }
+        renderSourceSlots();
+        setSourceLayoutStatus(`已使用图片实际尺寸：${info.width} × ${info.height}`, "ok");
+      } catch (error) {
+        setSourceLayoutStatus(error.message, "bad");
+      }
+    });
+
+    $("applyRatioBtn").addEventListener("click", () => {
+      const w = numValue("sourceRatioW", 0);
+      const h = numValue("sourceRatioH", 0);
+      if (!w || !h) {
+        setSourceLayoutStatus("请先填写宽比和高比。", "bad");
+        return;
+      }
+      $("sourceCanvasW").value = w;
+      $("sourceCanvasH").value = h;
+      refreshKeyboardRectDefault();
+      renderSourceSlots();
+      setSourceLayoutStatus(`已应用整体宽高：${w} × ${h}`, "ok");
+    });
+
+    $("generate26Btn").addEventListener("click", () => {
+      const size = sourceCanvasSize();
+      const width = size.width || 1080;
+      const height = size.height || 750;
+      $("sourceCanvasW").value = width;
+      $("sourceCanvasH").value = height;
+      refreshKeyboardRectDefault();
+      const rect = sourceKeyboardRect();
+      replaceSlots(py26TemplateSlots(rect), `已按小程序 26 键模板生成格子：整体 ${width}×${height}，键盘区 ${Math.round(rect.x)},${Math.round(rect.y)},${Math.round(rect.w)},${Math.round(rect.h)}`);
+    });
+
+    $("generateFromBaseBtn").addEventListener("click", () => {
+      try {
+        const panelKey = currentSourcePanelKey();
+        replaceSlots(slotsFromAnalyze(panelKey), `已使用底包 ${panelKey} 格子生成源模板。`);
+      } catch (error) {
+        setSourceLayoutStatus(error.message, "bad");
+      }
+    });
+
+    $("addSlotBtn").addEventListener("click", () => {
+      const size = sourceCanvasSize();
+      if (!size.width || !size.height) {
+        $("sourceCanvasW").value = 1080;
+        $("sourceCanvasH").value = 595;
+      }
+      refreshKeyboardRectDefault();
+      sourceSlots.push({ panel_key: currentSourcePanelKey(), name: `格子${sourceSlots.length + 1}`, x: 0, y: 0, w: 100, h: 100 });
+      activeSlotIndex = sourceSlots.length - 1;
+      $("sourceLayoutMode").value = "custom";
+      renderSourceSlots();
+    });
+
+    $("clearSlotsBtn").addEventListener("click", () => {
+      replaceSlots([], "已清空源图片格子。");
+      $("sourceLayoutMode").value = "none";
+    });
+
+    $("slotTableBody").addEventListener("change", (event) => {
+      const target = event.target;
+      const index = Number(target.dataset.index);
+      const field = target.dataset.field;
+      if (!Number.isInteger(index) || !sourceSlots[index] || !field) return;
+      if (field === "name" || field === "panel_key") {
+        sourceSlots[index][field] = target.value;
+      } else {
+        sourceSlots[index][field] = Number(target.value) || 0;
+        if (field === "w" || field === "h") sourceSlots[index][field] = Math.max(1, sourceSlots[index][field]);
+      }
+      activeSlotIndex = index;
+      renderSourceSlots();
+    });
+
+    $("slotTableBody").addEventListener("click", (event) => {
+      const deleteIndex = event.target.dataset.delete;
+      if (deleteIndex === undefined) return;
+      sourceSlots.splice(Number(deleteIndex), 1);
+      activeSlotIndex = Math.min(sourceSlots.length - 1, activeSlotIndex);
+      renderSourceSlots();
+    });
+
+    $("sourceCanvas").addEventListener("pointerdown", (event) => {
+      if ($("sourceLayoutMode").value !== "custom") $("sourceLayoutMode").value = "custom";
+      const size = sourceCanvasSize();
+      if (!size.width || !size.height) {
+        setSourceLayoutStatus("请先填写源图片整体宽高。", "bad");
+        return;
+      }
+      dragStart = canvasPoint(event);
+      draftSlot = { panel_key: currentSourcePanelKey(), name: `格子${sourceSlots.length + 1}`, x: dragStart.x, y: dragStart.y, w: 1, h: 1 };
+      $("sourceCanvas").setPointerCapture(event.pointerId);
+      renderSourceSlots();
+    });
+
+    $("sourceCanvas").addEventListener("pointermove", (event) => {
+      if (!dragStart || !draftSlot) return;
+      const point = canvasPoint(event);
+      draftSlot.x = Math.min(dragStart.x, point.x);
+      draftSlot.y = Math.min(dragStart.y, point.y);
+      draftSlot.w = Math.max(1, Math.abs(point.x - dragStart.x));
+      draftSlot.h = Math.max(1, Math.abs(point.y - dragStart.y));
+      renderSourceSlots();
+    });
+
+    $("sourceCanvas").addEventListener("pointerup", (event) => {
+      if (!dragStart || !draftSlot) return;
+      $("sourceCanvas").releasePointerCapture(event.pointerId);
+      if (draftSlot.w >= 3 && draftSlot.h >= 3) {
+        sourceSlots.push({ ...draftSlot });
+        activeSlotIndex = sourceSlots.length - 1;
+        setSourceLayoutStatus("已添加手绘格子，可在表格里修改键名和参数。", "ok");
+      }
+      draftSlot = null;
+      dragStart = null;
+      renderSourceSlots();
+    });
+
+    $("sourceCanvas").addEventListener("pointercancel", () => {
+      draftSlot = null;
+      dragStart = null;
+      renderSourceSlots();
+    });
+
+    ["sourceCanvasW", "sourceCanvasH"].forEach((id) => {
+      $(id).addEventListener("input", renderSourceSlots);
+    });
+
+    ["sourceKeyboardX", "sourceKeyboardY", "sourceKeyboardW", "sourceKeyboardH"].forEach((id) => {
+      $(id).addEventListener("input", () => {
+        keyboardRectTouched = true;
+        renderSourceSlots();
+      });
     });
 
     $("previewBtn").addEventListener("click", async () => {

@@ -14,6 +14,27 @@ from .skin_parser import KeySlot, PanelLayout, SkinPackage, StyleImageRef, parse
 ResizeMode = Literal["stretch", "contain", "cover"]
 
 
+@dataclass(frozen=True)
+class SourceGridSlot:
+    """源设计图里的一个可裁切格子。
+
+    rect 使用 source_layout 的逻辑坐标；当逻辑尺寸等于图片实际尺寸时，它就是像素坐标。
+    """
+
+    panel_key: str
+    name: str
+    rect: Rect
+
+
+@dataclass(frozen=True)
+class SourceGridLayout:
+    """用户手动识别/绘制的源图片格子布局。"""
+
+    canvas_width: int
+    canvas_height: int
+    slots: Tuple[SourceGridSlot, ...]
+
+
 @dataclass
 class KeyLayer:
     """用于导出 PSD 的单个按键图层。"""
@@ -117,23 +138,96 @@ def _resize_to_box(image: Image.Image, width: int, height: int, mode: ResizeMode
     return cropped
 
 
-def _crop_source_key(source: SourceImage, panel: PanelLayout, key: KeySlot) -> Image.Image:
-    """按目标键位的相对位置，从源 PSD 渲染图裁出对应区域。
+def _normalize_slot_name(value: str) -> str:
+    """把 Q/q、空格周围空白等差异规整成可匹配的键名。"""
 
-    第一版默认设计图和目标键盘属于同一类面板，例如都为 26 键/9 键/数字键。
-    因此用 `目标 VIEW_RECT / 目标面板尺寸` 映射到源图尺寸。后续如果增加“源底包 INI”，
-    可以在这里替换成源布局到目标布局的 IoU 匹配。
+    return "".join(str(value or "").split()).casefold()
+
+
+def _slot_candidates_for_key(panel: PanelLayout, key: KeySlot) -> List[str]:
+    values = [
+        key.debug_name,
+        key.template_label,
+        key.center,
+        key.section,
+    ]
+    result: List[str] = []
+    for value in values:
+        normalized = _normalize_slot_name(value)
+        if normalized and normalized not in result:
+            result.append(normalized)
+    return result
+
+
+def _scale_source_slot(source: SourceImage, layout: SourceGridLayout, rect: Rect) -> Rect:
+    sx = source.image.width / max(1, layout.canvas_width)
+    sy = source.image.height / max(1, layout.canvas_height)
+    return rect.scaled(sx, sy).clamp(source.image.width, source.image.height)
+
+
+def _panel_aliases(panel_key: str) -> set[str]:
+    """返回可共用几何模板的面板名集合。
+
+    小程序里 py_26/en_26、py_9/en_9 共用同一套坐标模板；用户只画一份中文 26 键格子时，
+    英文 26 键也应该能复用，但不应该误套到 9 键或符号面板。
     """
 
+    key = (panel_key or "").strip()
+    if key in {"py_26", "en_26"}:
+        return {"py_26", "en_26"}
+    if key in {"py_9", "en_9"}:
+        return {"py_9", "en_9"}
+    return {key} if key else {""}
+
+
+def _slot_panel_matches(slot: SourceGridSlot, panel: PanelLayout) -> bool:
+    return not slot.panel_key or slot.panel_key in _panel_aliases(panel.panel_key)
+
+
+def _source_rect_from_layout(
+    source: SourceImage,
+    panel: PanelLayout,
+    key: KeySlot,
+    key_index: int,
+    source_layout: Optional[SourceGridLayout],
+) -> tuple[Optional[Rect], str]:
+    if not source_layout or not source_layout.slots:
+        return None, "default"
+
+    panel_slots = [slot for slot in source_layout.slots if _slot_panel_matches(slot, panel)]
+    if not panel_slots:
+        return None, "default"
+
+    names = _slot_candidates_for_key(panel, key)
+    for slot in panel_slots:
+        if _normalize_slot_name(slot.name) in names:
+            return _scale_source_slot(source, source_layout, slot.rect), "name"
+
+    # 没填名称时，按视觉顺序兜底。前端从底包格子生成时就是按 y/x 排序。
+    ordered_slots = sorted(panel_slots, key=lambda item: (item.rect.y, item.rect.x, item.rect.w, item.rect.h))
+    if 0 <= key_index < len(ordered_slots):
+        return _scale_source_slot(source, source_layout, ordered_slots[key_index].rect), "order"
+    return None, "default"
+
+
+def _default_source_rect(source: SourceImage, panel: PanelLayout, key: KeySlot) -> Rect:
     src_w, src_h = source.image.size
     sx = src_w / max(1, panel.width)
     sy = src_h / max(1, panel.height)
-    source_rect = key.rect.scaled(sx, sy).clamp(src_w, src_h)
+    return key.rect.scaled(sx, sy).clamp(src_w, src_h)
+
+
+def _crop_source_key(source: SourceImage, source_rect: Rect) -> Image.Image:
+    """按目标键位的相对位置，从源 PSD 渲染图裁出对应区域。
+
+    source_rect 已经由调用方决定：可能来自手动画的源图片格子，也可能来自旧的底包比例映射。
+    """
+
     return source.image.crop(source_rect.to_box()).convert("RGBA")
 
 
-def _make_key_art(source: SourceImage, panel: PanelLayout, key: KeySlot, dest_rect: Rect, mode: ResizeMode) -> Image.Image:
-    cropped = _crop_source_key(source, panel, key)
+def _make_key_art(source: SourceImage, source_rect: Rect, dest_rect: Rect, mode: ResizeMode) -> Image.Image:
+    cropped = _crop_source_key(source, source_rect)
     try:
         return _resize_to_box(cropped, dest_rect.w, dest_rect.h, mode)
     finally:
@@ -183,11 +277,13 @@ class SkinAdapter:
         sources: List[SourceImage],
         resize_mode: ResizeMode = "stretch",
         darken_pressed: bool = True,
+        source_layout: Optional[SourceGridLayout] = None,
     ) -> None:
         self.skin = skin
         self.sources = sources
         self.resize_mode = resize_mode
         self.darken_pressed = darken_pressed
+        self.source_layout = source_layout
         self.diagnostics: List[str] = list(skin.diagnostics)
         self._til_cache: Dict[str, Dict[int, Rect]] = {}
         self._atlas_cache: Dict[str, Image.Image] = {}
@@ -269,13 +365,19 @@ class SkinAdapter:
                 )
                 for source_layer in source.layers
             ]
-            src_w, src_h = source.image.size
-            sx = src_w / max(1, panel.width)
-            sy = src_h / max(1, panel.height)
-
-            for key in panel.keys:
-                source_rect = key.rect.scaled(sx, sy).clamp(src_w, src_h)
-                key_art = _make_key_art(source, panel, key, key.rect, self.resize_mode)
+            order_fallback_reported = False
+            default_fallback_reported = False
+            for key_index, key in enumerate(panel.keys):
+                source_rect, source_match = _source_rect_from_layout(source, panel, key, key_index, self.source_layout)
+                if source_rect is None:
+                    source_rect = _default_source_rect(source, panel, key)
+                    if self.source_layout and not default_fallback_reported:
+                        self.diagnostics.append(f"{panel.title}: 源格子数量不足或面板不匹配，部分按键已回退到底包比例裁切。")
+                        default_fallback_reported = True
+                elif source_match == "order" and not order_fallback_reported:
+                    self.diagnostics.append(f"{panel.title}: 部分源格子未按键名匹配，已按视觉顺序兜底裁切。")
+                    order_fallback_reported = True
+                key_art = _make_key_art(source, source_rect, key.rect, self.resize_mode)
                 preview.alpha_composite(key_art, (key.rect.x, key.rect.y))
                 key_layers.append(
                     KeyLayer(

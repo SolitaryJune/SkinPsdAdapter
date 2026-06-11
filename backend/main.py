@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import base64
+import json
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .services.adapter import ResizeMode, SkinAdapter, image_to_png_bytes
+from .services.adapter import ResizeMode, SkinAdapter, SourceGridLayout, SourceGridSlot, image_to_png_bytes
+from .services.ini_parser import Rect
 from .services.psd_exporter import PsdLayerMode, export_adapted_psd
 from .services.psd_reader import SourceImage, load_source_images
 from .services.skin_parser import DEFAULT_PANEL_SELECTION, PanelLayoutBasis, PanelSizeBasis, SkinPackage, parse_skin_package
@@ -43,6 +45,56 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 def _split_panels(panels: str) -> List[str]:
     selected = [item.strip() for item in panels.split(",") if item.strip()]
     return selected or list(DEFAULT_PANEL_SELECTION)
+
+
+def _parse_source_layout(payload: str | None) -> Optional[SourceGridLayout]:
+    """解析前端传来的源图片格子。
+
+    JSON 结构保持简单：{canvas_width, canvas_height, slots:[{panel_key,name,x,y,w,h}]}。
+    所有数值都按源图片逻辑坐标理解，后端会自动缩放到实际图片像素。
+    """
+
+    if not payload:
+        return None
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"源图片格子 JSON 无效: {exc}") from exc
+
+    canvas_width = int(data.get("canvas_width") or data.get("width") or 0)
+    canvas_height = int(data.get("canvas_height") or data.get("height") or 0)
+    if canvas_width <= 0 or canvas_height <= 0:
+        raise HTTPException(status_code=400, detail="源图片格子需要填写有效的整体宽高。")
+
+    slots: List[SourceGridSlot] = []
+    for index, item in enumerate(data.get("slots") or [], start=1):
+        try:
+            raw_x = int(round(float(item.get("x", 0))))
+            raw_y = int(round(float(item.get("y", 0))))
+            raw_w = max(1, int(round(float(item.get("w", 0)))))
+            raw_h = max(1, int(round(float(item.get("h", 0)))))
+            rect = Rect(
+                x=raw_x,
+                y=raw_y,
+                w=raw_w,
+                h=raw_h,
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"第 {index} 个源格子参数无效。") from exc
+        if rect.x < 0 or rect.y < 0:
+            raise HTTPException(status_code=400, detail=f"第 {index} 个源格子坐标不能为负数。")
+        if rect.x >= canvas_width or rect.y >= canvas_height:
+            raise HTTPException(status_code=400, detail=f"第 {index} 个源格子起点超出整体画布。")
+        rect = rect.clamp(canvas_width, canvas_height)
+        slots.append(
+            SourceGridSlot(
+                panel_key=str(item.get("panel_key") or ""),
+                name=str(item.get("name") or f"slot{index}"),
+                rect=rect,
+            )
+        )
+
+    return SourceGridLayout(canvas_width=canvas_width, canvas_height=canvas_height, slots=tuple(slots))
 
 
 def _close_sources(sources: List[SourceImage]) -> None:
@@ -112,6 +164,17 @@ def _summarize_skin(skin: SkinPackage) -> dict:
                     key.debug_name
                     for key in sorted(panel.keys, key=lambda item: (item.rect.y, item.rect.x))[:12]
                 ],
+                "keys": [
+                    {
+                        "name": key.debug_name,
+                        "section": key.section,
+                        "x": key.rect.x,
+                        "y": key.rect.y,
+                        "w": key.rect.w,
+                        "h": key.rect.h,
+                    }
+                    for key in sorted(panel.keys, key=lambda item: (item.rect.y, item.rect.x))
+                ],
                 "atlas_count": len({ref.png_path for key in panel.keys for ref in key.style_refs}),
             }
             for panel in skin.panels
@@ -130,6 +193,7 @@ def _build_result(
     layout_basis: PanelLayoutBasis,
     include_pressed: bool,
     darken_pressed: bool,
+    source_layout: Optional[SourceGridLayout] = None,
 ):
     """统一构建适配结果。
 
@@ -156,6 +220,7 @@ def _build_result(
         sources=sources,
         resize_mode=resize_mode,
         darken_pressed=darken_pressed,
+        source_layout=source_layout,
     )
     result = adapter.adapt()
     return sources, skin, adapter, result
@@ -179,6 +244,7 @@ async def analyze(
     size_basis: PanelSizeBasis = Form("auto"),
     layout_basis: PanelLayoutBasis = Form("ini"),
     include_pressed: bool = Form(True),
+    source_layout: str = Form(""),
 ) -> JSONResponse:
     design_data = await _read_upload(design_file)
     package_data = await _read_upload(base_package)
@@ -218,6 +284,39 @@ async def analyze(
             skin.archive.close()
 
 
+@app.post("/api/source-info")
+async def source_info(
+    design_file: UploadFile = File(...),
+) -> JSONResponse:
+    """只解析设计稿尺寸。
+
+    浏览器能直接读取 PNG/JPG/WebP 的像素尺寸，但 PSD/PSD zip 需要后端用 psd-tools 渲染后
+    才知道真实画布大小。这个接口给“识别图片尺寸”按钮单独使用，不要求先选择底包。
+    """
+
+    design_data = await _read_upload(design_file)
+    sources: List[SourceImage] = []
+    try:
+        sources = load_source_images(design_data, design_file.filename or "design")
+        return JSONResponse(
+            {
+                "sources": [
+                    {
+                        "name": source.name,
+                        "panel_key": source.panel_key,
+                        "size": list(source.image.size),
+                        "layer_count": source.layer_count,
+                    }
+                    for source in sources
+                ],
+            }
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        _close_sources(sources)
+
+
 @app.post("/api/preview")
 async def preview(
     design_file: UploadFile = File(...),
@@ -228,6 +327,7 @@ async def preview(
     layout_basis: PanelLayoutBasis = Form("ini"),
     include_pressed: bool = Form(True),
     darken_pressed: bool = Form(True),
+    source_layout: str = Form(""),
 ) -> JSONResponse:
     design_data = await _read_upload(design_file)
     package_data = await _read_upload(base_package)
@@ -244,6 +344,7 @@ async def preview(
             layout_basis=layout_basis,
             include_pressed=include_pressed,
             darken_pressed=darken_pressed,
+            source_layout=_parse_source_layout(source_layout),
         )
         previews = []
         for panel_result in result.panels:
@@ -290,6 +391,7 @@ async def export_psd(
     include_pressed: bool = Form(True),
     darken_pressed: bool = Form(True),
     layer_mode: PsdLayerMode = Form("source_layers"),
+    source_layout: str = Form(""),
 ) -> Response:
     design_data = await _read_upload(design_file)
     package_data = await _read_upload(base_package)
@@ -306,6 +408,7 @@ async def export_psd(
             layout_basis=layout_basis,
             include_pressed=include_pressed,
             darken_pressed=darken_pressed,
+            source_layout=_parse_source_layout(source_layout),
         )
         payload = export_adapted_psd(result, mode=layer_mode)
         return Response(
@@ -338,6 +441,7 @@ async def export_package(
     layout_basis: PanelLayoutBasis = Form("ini"),
     include_pressed: bool = Form(True),
     darken_pressed: bool = Form(True),
+    source_layout: str = Form(""),
 ) -> Response:
     design_data = await _read_upload(design_file)
     package_data = await _read_upload(base_package)
@@ -354,6 +458,7 @@ async def export_package(
             layout_basis=layout_basis,
             include_pressed=include_pressed,
             darken_pressed=darken_pressed,
+            source_layout=_parse_source_layout(source_layout),
         )
         if not result.replacements:
             raise HTTPException(status_code=400, detail="没有生成任何可替换 PNG。")
