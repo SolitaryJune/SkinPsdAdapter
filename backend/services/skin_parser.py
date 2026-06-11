@@ -232,20 +232,29 @@ def _read_png_size(archive: SkinArchive, path: str) -> Optional[tuple[int, int]]
 
 
 def _get_primary_atlas_size(archive: SkinArchive, refs: Sequence[StyleImageRef]) -> Optional[tuple[int, int]]:
-    """从 BACK_STYLE 引用里取面积最大的 PNG 尺寸。
+    """从 BACK_STYLE 引用里取小程序贴纸页认可的主图集尺寸。
 
-    贴纸/前景页面会用 BACK_STYLE 主图集判断 595/641 这类冲突。这里按 PNG 面积排序，
-    可以覆盖常态图和按压态图尺寸不一致的老包。
+    小程序不是按 PNG 面积选图，而是先统计 KEY -> BACK_STYLE -> CSS 的引用次数，
+    再用高频图集作为贴纸背景主资源。否则 `abj.png` 这类只被整面板背景引用、
+    但尺寸更大的图，会把 26/9 键面板误识别成背景大图尺寸。
     """
 
-    seen: set[str] = set()
-    sizes: List[tuple[int, int]] = []
+    usage: Dict[str, int] = {}
     for ref in refs:
-        key = ref.png_path.lower()
-        if key in seen:
+        usage[ref.png_path.lower()] = usage.get(ref.png_path.lower(), 0) + 1
+    if not usage:
+        return None
+
+    primary_count = max(usage.values())
+    threshold = max(min(2, primary_count), int(primary_count * 0.8))
+    sizes: List[tuple[int, int]] = []
+    for png_path_lower, count in usage.items():
+        if count < threshold:
             continue
-        seen.add(key)
-        size = _read_png_size(archive, ref.png_path)
+        matched_ref = next((ref for ref in refs if ref.png_path.lower() == png_path_lower), None)
+        if not matched_ref:
+            continue
+        size = _read_png_size(archive, matched_ref.png_path)
         if size:
             sizes.append(size)
     if not sizes:
