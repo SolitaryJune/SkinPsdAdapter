@@ -14,7 +14,7 @@ from .ini_parser import (
     parse_rect,
     sorted_numbered_sections,
 )
-from .keyboard_templates import infer_layout_type, match_preset_by_position
+from .keyboard_templates import auto_fill_rects, infer_layout_type, match_preset_by_position
 
 
 STYLE_IMAGE_PROPS = ("NM_IMG", "HL_IMG")
@@ -950,6 +950,27 @@ def parse_panel_layout(
 
     if not keys:
         return None
+
+    filled_rects, auto_count = auto_fill_rects(
+        rects=[key.rect for key in keys],
+        width=width,
+        height=height,
+        filename=ini_name,
+    )
+    for index, rect in enumerate(filled_rects[len(keys) :], start=1):
+        keys.append(
+            KeySlot(
+                section=f"AUTO_KEY{index}",
+                rect=rect,
+                center="",
+                back_style="",
+                fore_style="",
+                style_refs=[],
+            )
+        )
+    if auto_count:
+        layout_note += f", 自动补全 {auto_count} 个键位"
+
     labels = match_preset_by_position(
         rects=[key.rect for key in keys],
         filename=ini_name,

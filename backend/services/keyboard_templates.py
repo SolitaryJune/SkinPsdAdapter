@@ -15,6 +15,72 @@ class KeyPreset:
     text: str
 
 
+# 小程序 parseKeysFromINI 的自动补全模板。它和 POSITION_PRESETS 的用途不同：
+# POSITION_PRESETS 负责给已有键命名；这些模板负责在底包少写 KEY 时补出缺失矩形。
+TEMPLATE_17: tuple[Rect, ...] = (
+    Rect(170, 0, 247, 149),
+    Rect(416, 0, 247, 149),
+    Rect(662, 0, 247, 149),
+    Rect(170, 148, 247, 149),
+    Rect(416, 148, 247, 149),
+    Rect(662, 148, 247, 149),
+    Rect(170, 296, 247, 149),
+    Rect(416, 296, 247, 149),
+    Rect(662, 296, 247, 149),
+    Rect(340, 444, 399, 149),
+    Rect(908, 0, 171, 149),
+    Rect(908, 148, 171, 149),
+    Rect(908, 296, 171, 297),
+    Rect(170, 444, 171, 149),
+    Rect(738, 444, 171, 149),
+    Rect(0, 444, 171, 149),
+    Rect(0, 0, 172, 448),
+)
+
+TEMPLATE_SYMBOL_7: tuple[Rect, ...] = (
+    Rect(170, 0, 908, 555),
+    Rect(0, 554, 170, 148),
+    Rect(170, 554, 170, 148),
+    Rect(340, 554, 398, 148),
+    Rect(738, 554, 170, 148),
+    Rect(908, 554, 170, 148),
+    Rect(0, 0, 170, 555),
+)
+
+TEMPLATE_NUM9_18: tuple[Rect, ...] = (
+    Rect(170, 0, 248, 149),
+    Rect(416, 0, 248, 149),
+    Rect(662, 0, 248, 149),
+    Rect(170, 148, 248, 149),
+    Rect(416, 148, 248, 149),
+    Rect(662, 148, 248, 149),
+    Rect(170, 296, 248, 149),
+    Rect(416, 296, 248, 149),
+    Rect(662, 296, 248, 149),
+    Rect(416, 444, 248, 148),
+    Rect(908, 0, 171, 149),
+    Rect(908, 148, 171, 149),
+    Rect(908, 296, 171, 149),
+    Rect(908, 444, 171, 148),
+    Rect(0, 444, 172, 148),
+    Rect(170, 444, 248, 148),
+    Rect(662, 444, 248, 148),
+    Rect(0, 0, 171, 444),
+)
+
+TEMPLATE_HWGRID_9: tuple[Rect, ...] = (
+    Rect(170, 0, 739, 445),
+    Rect(908, 0, 171, 149),
+    Rect(908, 148, 171, 149),
+    Rect(908, 296, 171, 297),
+    Rect(0, 444, 171, 148),
+    Rect(170, 444, 171, 148),
+    Rect(340, 444, 399, 148),
+    Rect(738, 444, 171, 148),
+    Rect(0, 0, 171, 445),
+)
+
+
 # 这些模板直接对齐小程序 packageSkin/shared/keyboard-layout-helper.ts。
 # 设计稿里的 CENTER 经常是 F36、F38 这类内部占位符，所以贴纸前景页会优先按坐标识别真实键名。
 POSITION_PRESETS: dict[str, list[KeyPreset]] = {
@@ -231,7 +297,207 @@ def _coverage(a: Rect, b: Rect) -> float:
     right = min(a.right, b.right)
     bottom = min(a.bottom, b.bottom)
     inter = max(0, right - left) * max(0, bottom - top)
-    return inter / max(1, min(a.area, b.area))
+    # 对齐小程序 calcCoverage(key, preset)：按键覆盖“预设槽位”的比例。
+    return inter / max(1, b.area)
+
+
+def _scale_template(template: Sequence[Rect], width: int, height: int, base_width: int, base_height: int) -> list[Rect]:
+    scale_x = width / max(1, base_width)
+    scale_y = height / max(1, base_height)
+    return [slot.scaled(scale_x, scale_y) for slot in template]
+
+
+def _group_by_near(values: Sequence[int], eps: int = 6) -> list[int]:
+    groups: list[list[int]] = []
+    for value in sorted(values):
+        for group in groups:
+            if abs(group[0] - value) <= eps:
+                group.append(value)
+                break
+        else:
+            groups.append([value])
+    return [round(sum(group) / len(group)) for group in groups]
+
+
+def _average(values: Sequence[int]) -> int:
+    return round(sum(values) / len(values)) if values else 0
+
+
+def _nearest(value: int, candidates: Sequence[int]) -> int | None:
+    if not candidates:
+        return None
+    return min(candidates, key=lambda item: abs(item - value))
+
+
+def _mark_template_matches(
+    visible: Sequence[Rect],
+    expected: Sequence[Rect],
+    *,
+    iou_threshold: float,
+    coverage_first: bool = False,
+) -> list[bool]:
+    """按小程序规则判断哪些模板槽位已被真实 KEY 占用。"""
+
+    matched = [False] * len(expected)
+    if coverage_first:
+        for index, slot in enumerate(expected):
+            matched[index] = any(_coverage(rect, slot) >= 0.8 for rect in visible)
+
+    for rect in visible:
+        best_index = -1
+        best_iou = 0.0
+        for index, slot in enumerate(expected):
+            if coverage_first and matched[index]:
+                continue
+            iou = _rect_iou(rect, slot)
+            if iou > best_iou:
+                best_index = index
+                best_iou = iou
+        if best_index >= 0 and best_iou >= iou_threshold and not matched[best_index]:
+            matched[best_index] = True
+    return matched
+
+
+def _cluster_metrics(visible: Sequence[Rect]) -> tuple[list[int], list[int], dict[int, int], dict[int, int]]:
+    """提取已有键的行列聚类，用来把补全键吸附到真实底包坐标。"""
+
+    eps = 6
+    col_xs = _group_by_near([rect.x for rect in visible], eps)
+    row_ys = sorted(_group_by_near([rect.y for rect in visible], eps))
+    col_widths = {
+        x: _average([rect.w for rect in visible if abs(rect.x - x) <= eps])
+        for x in col_xs
+    }
+    row_heights = {
+        y: _average([rect.h for rect in visible if abs(rect.y - y) <= eps])
+        for y in row_ys
+    }
+    return col_xs, row_ys, col_widths, row_heights
+
+
+def _first_rows_height(visible: Sequence[Rect], row_ys: Sequence[int], row_heights: dict[int, int], left_main_col_x: int | None) -> int:
+    if left_main_col_x is not None:
+        col_keys = sorted((rect for rect in visible if abs(rect.x - left_main_col_x) <= 6), key=lambda item: item.y)
+        total = sum(rect.h for rect in col_keys[:3])
+        if total > 0:
+            return total
+
+    heights = [row_heights.get(y, 0) for y in list(row_ys)[:3]]
+    if not heights:
+        return 0
+    sorted_heights = sorted(heights)
+    median = sorted_heights[len(sorted_heights) // 2] if sorted_heights else 0
+    clipped = [median if median and height > median * 1.7 else height for height in heights]
+    return sum(clipped)
+
+
+def _append_missing_template_rects(
+    visible: Sequence[Rect],
+    expected: Sequence[Rect],
+    matched: Sequence[bool],
+    width: int,
+    height: int,
+    *,
+    left_bar_index: int | None = None,
+    main_index: int | None = None,
+    num9_left_bar: bool = False,
+) -> list[Rect]:
+    """把未命中的模板槽位补进来，并按真实行列尺寸做轻量吸附。"""
+
+    if not visible:
+        return list(visible)
+
+    col_xs, row_ys, col_widths, row_heights = _cluster_metrics(visible)
+    left_col_x = next((x for x in col_xs if abs(x) <= 6), 0)
+    left_col_widths = [rect.w for rect in visible if abs(rect.x - left_col_x) <= 6]
+    positive_cols = sorted(x for x in col_xs if x > 0)
+    left_main_col_x = positive_cols[0] if positive_cols else None
+    left_col_typical_w = _average(left_col_widths)
+    if left_col_typical_w <= 0 and left_main_col_x is not None:
+        left_col_typical_w = col_widths.get(left_main_col_x, 0)
+
+    main_area_h = 0
+    if main_index is not None and 0 <= main_index < len(expected):
+        main_slot = expected[main_index]
+        main_area_h = main_slot.h
+        best_iou = 0.0
+        for rect in visible:
+            iou = _rect_iou(rect, main_slot)
+            if iou > best_iou:
+                best_iou = iou
+                main_area_h = rect.h
+
+    max_row_height = max(row_heights.values(), default=0)
+    augmented = list(visible)
+    for index, slot in enumerate(expected):
+        if matched[index]:
+            continue
+
+        auto = slot
+        near_left = slot.x <= max(5, round(width * 0.01))
+        near_top = slot.y <= max(5, round(height * 0.01))
+        is_left_bar = index == left_bar_index or (near_left and near_top)
+        if num9_left_bar:
+            is_left_bar = near_left and near_top and slot.h >= max_row_height * 2
+
+        if is_left_bar:
+            auto = Rect(
+                x=0,
+                y=0,
+                w=left_col_typical_w or auto.w,
+                h=(main_area_h if main_area_h > 0 else _first_rows_height(visible, row_ys, row_heights, left_main_col_x)) or auto.h,
+            )
+        elif main_index is not None and index == main_index and main_area_h > 0:
+            auto = Rect(auto.x, auto.y, auto.w, main_area_h)
+        else:
+            snap_col = _nearest(slot.x, col_xs)
+            snap_row = _nearest(slot.y, row_ys)
+            if snap_col is not None and col_widths.get(snap_col):
+                auto = Rect(snap_col, auto.y, col_widths[snap_col], auto.h)
+            if snap_row is not None and row_heights.get(snap_row):
+                auto = Rect(auto.x, snap_row, auto.w, row_heights[snap_row])
+
+        augmented.append(auto.clamp(width, height))
+    return augmented
+
+
+def auto_fill_rects(rects: Sequence[Rect], width: int, height: int, filename: str) -> tuple[list[Rect], int]:
+    """复刻小程序 autoFillKeys：底包少写常见键位时，按标准模板补出矩形。
+
+    返回值是 `(补全后的矩形列表, 新增数量)`。新增矩形没有原始 TIL 引用，只用于预览/PSD 图层；
+    如果要写回底包，仍只能写已有 KEY 的 BACK_STYLE/HL_IMG/NM_IMG 切片。
+    """
+
+    lower = filename.lower()
+    visible = list(rects)
+    if not visible:
+        return visible, 0
+
+    if ("bh.ini" in lower or "py_9.ini" in lower or "en_9.ini" in lower or "bh" in lower or "py_9" in lower or "en_9" in lower) and len(visible) < 17:
+        expected = _scale_template(TEMPLATE_17, width, height, 1080, 595)
+        matched = _mark_template_matches(visible, expected, iou_threshold=0.2)
+        filled = _append_missing_template_rects(visible, expected, matched, width, height)
+        return filled, len(filled) - len(visible)
+
+    if ("num_9.ini" in lower or "num_9" in lower) and len(visible) < 18:
+        expected = _scale_template(TEMPLATE_NUM9_18, width, height, 1080, 595)
+        matched = _mark_template_matches(visible, expected, iou_threshold=0.2)
+        filled = _append_missing_template_rects(visible, expected, matched, width, height, num9_left_bar=True)
+        return filled, len(filled) - len(visible)
+
+    if ("symbol.ini" in lower or "symbol" in lower) and len(visible) < 7:
+        expected = _scale_template(TEMPLATE_SYMBOL_7, width, height, 1080, 704)
+        matched = _mark_template_matches(visible, expected, iou_threshold=0.25, coverage_first=True)
+        filled = _append_missing_template_rects(visible, expected, matched, width, height, left_bar_index=6, main_index=0)
+        return filled, len(filled) - len(visible)
+
+    if ("hw_grid.ini" in lower or "hw_grid" in lower) and len(visible) < 9:
+        expected = _scale_template(TEMPLATE_HWGRID_9, width, height, 1080, 595)
+        matched = _mark_template_matches(visible, expected, iou_threshold=0.25, coverage_first=True)
+        filled = _append_missing_template_rects(visible, expected, matched, width, height, left_bar_index=8, main_index=0)
+        return filled, len(filled) - len(visible)
+
+    return visible, 0
 
 
 def _symbol_bottom_labels(rects: Sequence[Rect], fallbacks: Sequence[str]) -> list[str]:
