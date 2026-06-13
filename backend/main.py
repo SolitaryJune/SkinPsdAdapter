@@ -50,7 +50,7 @@ def _split_panels(panels: str) -> List[str]:
 def _parse_source_layout(payload: str | None) -> Optional[SourceGridLayout]:
     """解析前端传来的源图片格子。
 
-    JSON 结构保持简单：{canvas_width, canvas_height, slots:[{panel_key,name,x,y,w,h}]}。
+    JSON 结构保持简单：{canvas_width, canvas_height, keyboard_rect, slots:[{panel_key,name,x,y,w,h}]}。
     所有数值都按源图片逻辑坐标理解，后端会自动缩放到实际图片像素。
     """
 
@@ -65,6 +65,24 @@ def _parse_source_layout(payload: str | None) -> Optional[SourceGridLayout]:
     canvas_height = int(data.get("canvas_height") or data.get("height") or 0)
     if canvas_width <= 0 or canvas_height <= 0:
         raise HTTPException(status_code=400, detail="源图片格子需要填写有效的整体宽高。")
+
+    keyboard_payload = data.get("keyboard_rect") or {}
+    keyboard_rect: Optional[Rect] = None
+    if keyboard_payload:
+        try:
+            raw_keyboard = Rect(
+                x=int(round(float(keyboard_payload.get("x", 0)))),
+                y=int(round(float(keyboard_payload.get("y", 0)))),
+                w=max(1, int(round(float(keyboard_payload.get("w", canvas_width))))),
+                h=max(1, int(round(float(keyboard_payload.get("h", canvas_height))))),
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="源图片键盘区参数无效。") from exc
+        if raw_keyboard.x < 0 or raw_keyboard.y < 0:
+            raise HTTPException(status_code=400, detail="源图片键盘区坐标不能为负数。")
+        if raw_keyboard.x >= canvas_width or raw_keyboard.y >= canvas_height:
+            raise HTTPException(status_code=400, detail="源图片键盘区起点超出整体画布。")
+        keyboard_rect = raw_keyboard.clamp(canvas_width, canvas_height)
 
     slots: List[SourceGridSlot] = []
     for index, item in enumerate(data.get("slots") or [], start=1):
@@ -94,7 +112,12 @@ def _parse_source_layout(payload: str | None) -> Optional[SourceGridLayout]:
             )
         )
 
-    return SourceGridLayout(canvas_width=canvas_width, canvas_height=canvas_height, slots=tuple(slots))
+    return SourceGridLayout(
+        canvas_width=canvas_width,
+        canvas_height=canvas_height,
+        slots=tuple(slots),
+        keyboard_rect=keyboard_rect,
+    )
 
 
 def _close_sources(sources: List[SourceImage]) -> None:

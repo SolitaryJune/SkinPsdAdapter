@@ -33,6 +33,7 @@ class SourceGridLayout:
     canvas_width: int
     canvas_height: int
     slots: Tuple[SourceGridSlot, ...]
+    keyboard_rect: Optional[Rect] = None
 
 
 @dataclass
@@ -210,11 +211,32 @@ def _source_rect_from_layout(
     return None, "default"
 
 
-def _default_source_rect(source: SourceImage, panel: PanelLayout, key: KeySlot) -> Rect:
+def _default_source_rect(
+    source: SourceImage,
+    panel: PanelLayout,
+    key: KeySlot,
+    source_layout: Optional[SourceGridLayout] = None,
+) -> Rect:
     src_w, src_h = source.image.size
-    sx = src_w / max(1, panel.width)
-    sy = src_h / max(1, panel.height)
-    return key.rect.scaled(sx, sy).clamp(src_w, src_h)
+    if not source_layout:
+        sx = src_w / max(1, panel.width)
+        sy = src_h / max(1, panel.height)
+        return key.rect.scaled(sx, sy).clamp(src_w, src_h)
+
+    # 无手动画格子时，也允许用户用整体画布宽高修正源图比例。
+    # 没有显式键盘区时直接把目标键位当作源逻辑坐标，这样 1060x628 这类
+    # 用户填写的逻辑尺寸会参与裁切比例；如果默认把键盘区设成整体画布，比例会被抵消。
+    if source_layout.keyboard_rect:
+        keyboard = source_layout.keyboard_rect
+        logical_rect = Rect(
+            x=round(keyboard.x + key.rect.x * keyboard.w / max(1, panel.width)),
+            y=round(keyboard.y + key.rect.y * keyboard.h / max(1, panel.height)),
+            w=max(1, round(key.rect.w * keyboard.w / max(1, panel.width))),
+            h=max(1, round(key.rect.h * keyboard.h / max(1, panel.height))),
+        )
+    else:
+        logical_rect = key.rect
+    return _scale_source_slot(source, source_layout, logical_rect)
 
 
 def _crop_source_key(source: SourceImage, source_rect: Rect) -> Image.Image:
@@ -370,9 +392,9 @@ class SkinAdapter:
             for key_index, key in enumerate(panel.keys):
                 source_rect, source_match = _source_rect_from_layout(source, panel, key, key_index, self.source_layout)
                 if source_rect is None:
-                    source_rect = _default_source_rect(source, panel, key)
-                    if self.source_layout and not default_fallback_reported:
-                        self.diagnostics.append(f"{panel.title}: 源格子数量不足或面板不匹配，部分按键已回退到底包比例裁切。")
+                    source_rect = _default_source_rect(source, panel, key, self.source_layout)
+                    if self.source_layout and self.source_layout.slots and not default_fallback_reported:
+                        self.diagnostics.append(f"{panel.title}: 源格子数量不足或面板不匹配，部分按键已回退到整体比例裁切。")
                         default_fallback_reported = True
                 elif source_match == "order" and not order_fallback_reported:
                     self.diagnostics.append(f"{panel.title}: 部分源格子未按键名匹配，已按视觉顺序兜底裁切。")

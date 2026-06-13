@@ -589,6 +589,7 @@
     let draftSlot = null;
     let dragStart = null;
     let keyboardRectTouched = false;
+    let sourceMappingTouched = false;
 
     // 这组坐标直接按小程序 packageSkin/shared/keyboard-layout-helper.ts 的 py_26_chinese 模板维护。
     // 前端生成源格子时先映射到“键盘区”，再由后端按源图片实际像素缩放裁切。
@@ -687,13 +688,16 @@
     }
 
     function buildSourceLayoutPayload() {
-      if ($("sourceLayoutMode").value !== "custom") return "";
       const canvas = sourceCanvasSize();
-      if (!canvas.width || !canvas.height || sourceSlots.length === 0) return "";
-      return JSON.stringify({
+      if (!canvas.width || !canvas.height) return "";
+
+      const includeSlots = $("sourceLayoutMode").value === "custom" && sourceSlots.length > 0;
+      if (!includeSlots && !sourceMappingTouched && !keyboardRectTouched) return "";
+
+      const payload = {
         canvas_width: canvas.width,
         canvas_height: canvas.height,
-        slots: sourceSlots.map((slot) => {
+        slots: includeSlots ? sourceSlots.map((slot) => {
           const x = Math.min(canvas.width - 1, Math.max(0, Math.round(slot.x)));
           const y = Math.min(canvas.height - 1, Math.max(0, Math.round(slot.y)));
           return {
@@ -704,8 +708,22 @@
             w: Math.max(1, Math.min(canvas.width - x, Math.round(slot.w))),
             h: Math.max(1, Math.min(canvas.height - y, Math.round(slot.h)))
           };
-        })
-      });
+        }) : []
+      };
+
+      if (keyboardRectTouched) {
+        const keyboard = sourceKeyboardRect();
+        const x = Math.min(canvas.width - 1, Math.max(0, Math.round(keyboard.x)));
+        const y = Math.min(canvas.height - 1, Math.max(0, Math.round(keyboard.y)));
+        payload.keyboard_rect = {
+          x,
+          y,
+          w: Math.max(1, Math.min(canvas.width - x, Math.round(keyboard.w))),
+          h: Math.max(1, Math.min(canvas.height - y, Math.round(keyboard.h)))
+        };
+      }
+
+      return JSON.stringify(payload);
     }
 
     function makeFormData(extra = {}) {
@@ -737,6 +755,7 @@
       if (overwriteCanvas) {
         $("sourceCanvasW").value = width;
         $("sourceCanvasH").value = height;
+        sourceMappingTouched = true;
       }
       if (!$("sourceRatioW").value) $("sourceRatioW").value = width;
       if (!$("sourceRatioH").value) $("sourceRatioH").value = height;
@@ -963,6 +982,7 @@
         } catch (_) {
           info = await loadDesignSourceInfo();
         }
+        sourceMappingTouched = true;
         renderSourceSlots();
         setSourceLayoutStatus(`已使用图片实际尺寸：${info.width} × ${info.height}`, "ok");
       } catch (error) {
@@ -979,9 +999,10 @@
       }
       $("sourceCanvasW").value = w;
       $("sourceCanvasH").value = h;
+      sourceMappingTouched = true;
       refreshKeyboardRectDefault();
       renderSourceSlots();
-      setSourceLayoutStatus(`已应用整体宽高：${w} × ${h}`, "ok");
+      setSourceLayoutStatus(`已应用整体宽高：${w} × ${h}，无格子时也会按这个比例裁切。`, "ok");
     });
 
     $("generate26Btn").addEventListener("click", () => {
@@ -1088,12 +1109,17 @@
     });
 
     ["sourceCanvasW", "sourceCanvasH"].forEach((id) => {
-      $(id).addEventListener("input", renderSourceSlots);
+      $(id).addEventListener("input", () => {
+        sourceMappingTouched = true;
+        refreshKeyboardRectDefault();
+        renderSourceSlots();
+      });
     });
 
     ["sourceKeyboardX", "sourceKeyboardY", "sourceKeyboardW", "sourceKeyboardH"].forEach((id) => {
       $(id).addEventListener("input", () => {
         keyboardRectTouched = true;
+        sourceMappingTouched = true;
         renderSourceSlots();
       });
     });
