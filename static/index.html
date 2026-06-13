@@ -755,7 +755,6 @@
       if (overwriteCanvas) {
         $("sourceCanvasW").value = width;
         $("sourceCanvasH").value = height;
-        sourceMappingTouched = true;
       }
       if (!$("sourceRatioW").value) $("sourceRatioW").value = width;
       if (!$("sourceRatioH").value) $("sourceRatioH").value = height;
@@ -982,7 +981,8 @@
         } catch (_) {
           info = await loadDesignSourceInfo();
         }
-        sourceMappingTouched = true;
+        // 识别图片尺寸只记录真实像素，不等同于采用这组尺寸做裁切映射。
+        // 需要改变无格子裁切比例时，由“应用宽高比”或手动修改整体宽高显式触发。
         renderSourceSlots();
         setSourceLayoutStatus(`已使用图片实际尺寸：${info.width} × ${info.height}`, "ok");
       } catch (error) {
