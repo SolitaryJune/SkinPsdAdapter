@@ -50,8 +50,9 @@ def _split_panels(panels: str) -> List[str]:
 def _parse_source_layout(payload: str | None) -> Optional[SourceGridLayout]:
     """解析前端传来的源图片格子。
 
-    JSON 结构保持简单：{canvas_width, canvas_height, keyboard_rect, slots:[{panel_key,name,x,y,w,h}]}。
-    所有数值都按源图片逻辑坐标理解，后端会自动缩放到实际图片像素。
+    JSON 结构保持简单：
+    {canvas_width, canvas_height, output_width, output_height, keyboard_rect, slots:[...]}。
+    canvas_* 按源图片逻辑坐标理解；output_* 用于覆盖预览/PSD 输出面板尺寸。
     """
 
     if not payload:
@@ -65,6 +66,13 @@ def _parse_source_layout(payload: str | None) -> Optional[SourceGridLayout]:
     canvas_height = int(data.get("canvas_height") or data.get("height") or 0)
     if canvas_width <= 0 or canvas_height <= 0:
         raise HTTPException(status_code=400, detail="源图片格子需要填写有效的整体宽高。")
+
+    output_width = int(data.get("output_width") or 0)
+    output_height = int(data.get("output_height") or 0)
+    if bool(output_width) != bool(output_height):
+        raise HTTPException(status_code=400, detail="输出尺寸需要同时填写宽和高。")
+    if output_width < 0 or output_height < 0:
+        raise HTTPException(status_code=400, detail="输出尺寸不能为负数。")
 
     keyboard_payload = data.get("keyboard_rect") or {}
     keyboard_rect: Optional[Rect] = None
@@ -117,6 +125,8 @@ def _parse_source_layout(payload: str | None) -> Optional[SourceGridLayout]:
         canvas_height=canvas_height,
         slots=tuple(slots),
         keyboard_rect=keyboard_rect,
+        output_width=output_width or None,
+        output_height=output_height or None,
     )
 
 

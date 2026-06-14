@@ -710,6 +710,10 @@
           };
         }) : []
       };
+      if (sourceMappingTouched) {
+        payload.output_width = canvas.width;
+        payload.output_height = canvas.height;
+      }
 
       if (keyboardRectTouched) {
         const keyboard = sourceKeyboardRect();
@@ -1002,7 +1006,7 @@
       sourceMappingTouched = true;
       refreshKeyboardRectDefault();
       renderSourceSlots();
-      setSourceLayoutStatus(`已应用整体宽高：${w} × ${h}，无格子时也会按这个比例裁切。`, "ok");
+      setSourceLayoutStatus(`已应用整体宽高：${w} × ${h}，预览和 PSD 会按这个尺寸输出。`, "ok");
     });
 
     $("generate26Btn").addEventListener("click", () => {

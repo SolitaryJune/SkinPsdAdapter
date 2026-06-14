@@ -34,6 +34,8 @@ class SourceGridLayout:
     canvas_height: int
     slots: Tuple[SourceGridSlot, ...]
     keyboard_rect: Optional[Rect] = None
+    output_width: Optional[int] = None
+    output_height: Optional[int] = None
 
 
 @dataclass
@@ -256,6 +258,48 @@ def _make_key_art(source: SourceImage, source_rect: Rect, dest_rect: Rect, mode:
         cropped.close()
 
 
+def _scale_panel_for_output(panel: PanelLayout, source_layout: Optional[SourceGridLayout]) -> PanelLayout:
+    """按用户填写的整体宽高缩放预览/PSD 输出面板。
+
+    底包解析仍保持小程序默认尺寸；这里仅影响生成图和 PSD 画布。导出底包时，
+    写回仍使用原始 TIL 切片，不尝试重写底包的 INI/TIL 结构。
+    """
+
+    if not source_layout or not source_layout.output_width or not source_layout.output_height:
+        return panel
+
+    output_width = int(source_layout.output_width)
+    output_height = int(source_layout.output_height)
+    if output_width <= 0 or output_height <= 0 or (output_width == panel.width and output_height == panel.height):
+        return panel
+
+    sx = output_width / max(1, panel.width)
+    sy = output_height / max(1, panel.height)
+    scaled_keys = [
+        KeySlot(
+            section=key.section,
+            rect=key.rect.scaled(sx, sy),
+            center=key.center,
+            template_label=key.template_label,
+            back_style=key.back_style,
+            fore_style=key.fore_style,
+            style_refs=key.style_refs,
+        )
+        for key in panel.keys
+    ]
+    return PanelLayout(
+        theme=panel.theme,
+        panel_key=panel.panel_key,
+        ini_path=panel.ini_path,
+        res_path=panel.res_path,
+        width=output_width,
+        height=output_height,
+        keys=scaled_keys,
+        size_note=panel.size_note,
+        layout_note=f"{panel.layout_note}, 输出缩放 {panel.width}x{panel.height}->{output_width}x{output_height}",
+    )
+
+
 def _crop_source_layer_key(source_layer: SourceLayer, source_rect: Rect, dest_rect: Rect, mode: ResizeMode) -> Image.Image:
     """对单个源 PSD 图层执行同样的键位裁切/缩放。
 
@@ -370,7 +414,8 @@ class SkinAdapter:
     def adapt(self) -> AdaptResult:
         adapted_panels: List[AdaptedPanel] = []
 
-        for panel in self.skin.panels:
+        for raw_panel in self.skin.panels:
+            panel = _scale_panel_for_output(raw_panel, self.source_layout)
             source = _select_source_image(self.sources, panel.panel_key)
             preview = Image.new("RGBA", (panel.width, panel.height), (0, 0, 0, 0))
             key_layers: List[KeyLayer] = []
